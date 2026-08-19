@@ -1,0 +1,13 @@
+{
+  "name": "cloudflare-forum",
+  "private": true,
+  "version": "1.0.0",
+  "description": "Cloudflare Forum - Full Stack Forum Application",
+  "scripts": {
+    "dev:worker": "cd worker && npm run dev",
+    "dev:frontend": "cd frontend && npm run dev",
+    "deploy:worker": "cd worker && npm run deploy",
+    "deploy:frontend": "cd frontend && npm run build && cd .. && wrangler pages deploy frontend/dist --project-name=forum-frontend",
+    "db:migrate": "cd worker && npx wrangler d1 migrations apply forum-db"
+  }
+}

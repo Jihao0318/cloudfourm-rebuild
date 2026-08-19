@@ -1,0 +1,275 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>CloudForum 评论 VIP 着色预览</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Noto+Sans+SC:wght@400;500;600;700&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.7.2/css/all.min.css" />
+  <style>
+    :root {
+      --bg: #f6f5f2; --card: #ffffff; --border: #e8e6e1; --border-light: #f0efec;
+      --text: #1c1917; --text-secondary: #57534e; --text-tertiary: #a8a29e;
+      --primary: #3b82f6; --font: 'Noto Sans SC', 'Inter', sans-serif;
+    }
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { font-family: var(--font); background: var(--bg); color: var(--text); padding: 24px 16px; }
+    .page { max-width: 680px; margin: 0 auto; }
+
+    h1 { font-size: 20px; font-weight: 700; margin-bottom: 4px; }
+    .subtitle { color: var(--text-tertiary); font-size: 13px; margin-bottom: 20px; }
+
+    .card {
+      background: var(--card); border-radius: 16px;
+      border: 1px solid var(--border); overflow: hidden; margin-bottom: 20px;
+    }
+    .card-hdr {
+      padding: 12px 20px; border-bottom: 1px solid var(--border);
+      font-size: 14px; font-weight: 600;
+    }
+
+    /* ===== 评论 ===== */
+    .c { padding: 0 20px; }
+    .cr {
+      display: flex; gap: 10px; padding: 12px 0;
+    }
+    .av { width: 32px; height: 32px; border-radius: 50%; flex-shrink: 0; margin-top: 2px; }
+    .bd { flex: 1; min-width: 0; }
+    .meta { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+    .nm { font-size: 13px; font-weight: 600; }
+    .b { font-size: 10px; padding: 1px 7px; border-radius: 999px; font-weight: 600; display: inline-block; }
+    .b-svip { background: linear-gradient(135deg,#a78bfa,#ec4899); color: white; }
+    .b-svp { background: linear-gradient(135deg,#f87171,#f59e0b); color: white; }
+    .b-admin { background: #fee2e2; color: #dc2626; }
+    .tm { font-size: 11px; color: var(--text-tertiary); }
+    .tx { font-size: 14px; line-height: 1.6; margin: 3px 0 6px; }
+    .ac { display: flex; gap: 16px; font-size: 12px; color: var(--text-tertiary); }
+    .ac button { background: none; border: none; cursor: pointer; color: inherit; font-size: 12px; padding: 2px 0; }
+    .ac button:hover { color: var(--primary); }
+    .rt { font-size: 12px; color: var(--text-tertiary); margin: 1px 0; }
+    .rt strong { color: var(--primary); font-weight: 500; }
+    .dv { height: 1px; background: var(--border-light); margin: 0 20px; }
+    .i1 { padding-left: 20px; }
+    .i2 { padding-left: 40px; }
+
+    /* ===== VIP 评论着色（圆角左边框） ===== */
+    .vip-s {
+      border-left: 4px solid #c084fc !important;
+      border-top-left-radius: 10px;
+      border-bottom-left-radius: 10px;
+      background: linear-gradient(to right, #faf5ff, transparent);
+    }
+    .vip-sp {
+      border-left: 4px solid #f87171 !important;
+      border-top-left-radius: 10px;
+      border-bottom-left-radius: 10px;
+      background: linear-gradient(to right, #fef2f2, transparent);
+    }
+    .i1.vip-s, .i2.vip-s { border-left-color: #c084fc !important; border-left-width: 4px !important; }
+    .i1.vip-sp, .i2.vip-sp { border-left-color: #f87171 !important; border-left-width: 4px !important; }
+
+    .tag {
+      display: inline-flex; align-items: center; gap: 4px;
+      padding: 3px 10px; border-radius: 999px;
+      font-size: 11px; font-weight: 600;
+    }
+    .tag-green { background: #ecfdf5; color: #059669; }
+    .tag-amber { background: #fffbeb; color: #d97706; }
+    .tag-red { background: #fef2f2; color: #dc2626; }
+    .tag-blue { background: #eef2ff; color: #4f46e5; }
+
+    .legend { padding: 12px 20px; border-top: 1px solid var(--border); font-size: 13px; color: var(--text-tertiary); }
+  </style>
+</head>
+<body>
+<div class="page">
+
+  <h1><i class="fa-regular fa-comments" style="margin-right:6px;color:var(--primary);"></i>评论 VIP 着色 — 最终效果</h1>
+  <p class="subtitle">权益：仅 S-VIP 🟣 / SVIP+ 🔴 有评论变色 · 基础 VIP ❌ 无</p>
+
+  <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:16px;">
+    <span class="tag tag-green"><i class="fa-regular fa-check-circle"></i> 顶层/子级/孙级统一着色</span>
+    <span class="tag tag-amber"><i class="fa-regular fa-check-circle"></i> 基础 VIP 无变色</span>
+    <span class="tag tag-blue"><i class="fa-regular fa-check-circle"></i> 纯缩进无边框线</span>
+  </div>
+
+  <!-- ===== 评论卡片 ===== -->
+  <div class="card">
+    <div class="card-hdr"><i class="fa-regular fa-message"></i> 评论 · 10</div>
+
+    <!-- ▸ 评论 1：普通用户（无颜色） -->
+    <div class="c">
+      <div class="cr">
+        <div class="av" style="background:linear-gradient(135deg,#60a5fa,#3b82f6);"></div>
+        <div class="bd">
+          <div class="meta"><span class="nm">小明</span><span class="tm">2小时前</span></div>
+          <div class="tx">这个论坛功能好丰富啊！</div>
+          <div class="ac"><button><i class="fa-regular fa-heart"></i> 12</button><button>回复</button></div>
+        </div>
+      </div>
+      <!-- 普通用户回复 → 无颜色 -->
+      <div class="cr i1">
+        <div class="av" style="background:#d4d4d4;"></div>
+        <div class="bd">
+          <div class="meta"><span class="nm">小红</span><span class="tm">1小时前</span></div>
+          <div class="tx">确实很赞！</div>
+          <div class="ac"><button><i class="fa-regular fa-heart"></i> 5</button><button>回复</button></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="dv"></div>
+
+    <!-- ▸ 评论 2：基础 VIP（无评论变色） -->
+    <div class="c">
+      <div class="cr">
+        <div class="av" style="background:linear-gradient(135deg,#fbbf24,#f59e0b);"></div>
+        <div class="bd">
+          <div class="meta">
+            <span class="nm">基础VIP用户</span>
+            <span class="b" style="background:linear-gradient(135deg,#fbbf24,#f59e0b);color:white;">VIP</span>
+            <span class="tm">3小时前</span>
+          </div>
+          <div class="tx">我是 VIP 会员但没有评论变色哦</div>
+          <div class="ac"><button><i class="fa-regular fa-heart"></i> 6</button><button>回复</button></div>
+        </div>
+      </div>
+      <div style="padding:2px 0 6px 0;" class="i1">
+        <div style="font-size:12px;color:var(--text-tertiary);border:1px dashed var(--border);border-radius:8px;padding:8px 12px;">
+          <i class="fa-regular fa-info-circle"></i> 基础 VIP 无评论变色权益，无左边框
+        </div>
+      </div>
+    </div>
+
+    <div class="dv"></div>
+
+    <!-- ▸ 评论 3：S-VIP（紫色边框 ✅ 所有层级） -->
+    <div class="c">
+      <div class="cr vip-s">
+        <div class="av" style="background:linear-gradient(135deg,#c084fc,#a78bfa);"></div>
+        <div class="bd">
+          <div class="meta">
+            <span class="nm">S-VIP用户</span>
+            <span class="b b-svip">S VIP</span>
+            <span class="tm">1天前</span>
+          </div>
+          <div class="tx">S-VIP 报道！评论有紫色边框 ❤️</div>
+          <div class="ac"><button><i class="fa-regular fa-heart"></i> 8</button><button>回复</button></div>
+        </div>
+      </div>
+
+      <!-- S-VIP 的回复 → 也带紫色边框 -->
+      <div class="cr i1 vip-s">
+        <div class="av" style="background:linear-gradient(135deg,#c084fc,#a78bfa);"></div>
+        <div class="bd">
+          <div class="meta">
+            <span class="nm">S-VIP用户</span>
+            <span class="b b-svip">S VIP</span>
+            <span class="tm">20分钟前</span>
+          </div>
+          <div class="rt">回复 <strong>@小明</strong></div>
+          <div class="tx">子级回复也带紫色边框 ✅</div>
+          <div class="ac"><button><i class="fa-regular fa-heart"></i> 2</button><button>回复</button></div>
+        </div>
+      </div>
+
+      <!-- S-VIP 的孙回复 → 继续紫色 -->
+      <div class="cr i2 vip-s">
+        <div class="av" style="background:linear-gradient(135deg,#c084fc,#a78bfa);"></div>
+        <div class="bd">
+          <div class="meta">
+            <span class="nm">S-VIP用户</span>
+            <span class="b b-svip">S VIP</span>
+            <span class="tm">10分钟前</span>
+          </div>
+          <div class="rt">回复 <strong>@S-VIP用户</strong></div>
+          <div class="tx">孙级回复同样紫色 ✅ 不会丢失</div>
+          <div class="ac"><button><i class="fa-regular fa-heart"></i> 1</button><button>回复</button></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="dv"></div>
+
+    <!-- ▸ 评论 4：SVIP+（红色边框 ✅ 所有层级） -->
+    <div class="c">
+      <div class="cr vip-sp">
+        <div class="av" style="background:linear-gradient(135deg,#f87171,#f59e0b);"></div>
+        <div class="bd">
+          <div class="meta">
+            <span class="nm">SVIP+用户</span>
+            <span class="b" style="background:linear-gradient(135deg,#f87171,#f59e0b);color:white;">SVIP+</span>
+            <span class="tm">3天前</span>
+          </div>
+          <div class="tx">SVIP+ 报道！评论有红色边框 🚀</div>
+          <div class="ac"><button style="color:#ef4444;"><i class="fa-regular fa-heart"></i> 15</button><button>回复</button></div>
+        </div>
+      </div>
+
+      <!-- SVIP+ 回复 → 红色边框 -->
+      <div class="cr i1 vip-sp">
+        <div class="av" style="background:linear-gradient(135deg,#f87171,#f59e0b);"></div>
+        <div class="bd">
+          <div class="meta">
+            <span class="nm">SVIP+用户</span>
+            <span class="b" style="background:linear-gradient(135deg,#f87171,#f59e0b);color:white;">SVIP+</span>
+            <span class="tm">1天前</span>
+          </div>
+          <div class="rt">回复 <strong>@小明</strong></div>
+          <div class="tx">子级回复也带红色边框 ✅</div>
+          <div class="ac"><button><i class="fa-regular fa-heart"></i> 7</button><button>回复</button></div>
+        </div>
+      </div>
+
+      <!-- 非 VIP 用户回复 SVIP+ → 无颜色（正确） -->
+      <div class="cr i2">
+        <div class="av" style="background:#d4d4d4;"></div>
+        <div class="bd">
+          <div class="meta"><span class="nm">路人甲</span><span class="tm">30分钟前</span></div>
+          <div class="rt">回复 <strong>@SVIP+用户</strong></div>
+          <div class="tx">我不是 VIP，没有边框 ✅</div>
+          <div class="ac"><button><i class="fa-regular fa-heart"></i> 3</button><button>回复</button></div>
+        </div>
+      </div>
+
+      <!-- SVIP+ 再回复路人 → 红色又出现 -->
+      <div class="cr i2 vip-sp">
+        <div class="av" style="background:linear-gradient(135deg,#f87171,#f59e0b);"></div>
+        <div class="bd">
+          <div class="meta">
+            <span class="nm">SVIP+用户</span>
+            <span class="b" style="background:linear-gradient(135deg,#f87171,#f59e0b);color:white;">SVIP+</span>
+            <span class="tm">15分钟前</span>
+          </div>
+          <div class="rt">回复 <strong>@路人甲</strong></div>
+          <div class="tx">我回复又有红色边框了 ✅ 按作者身份走</div>
+          <div class="ac"><button><i class="fa-regular fa-heart"></i> 4</button><button>回复</button></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 规则说明 -->
+    <div class="legend">
+      <details open>
+        <summary><i class="fa-regular fa-circle-info"></i> 规则说明</summary>
+        <div style="margin-top:8px;line-height:2.2;font-size:13px;color:var(--text-secondary);">
+          <div>• 🟣 <strong>S-VIP</strong> — 紫色 4px 圆角左边框 + 浅紫背景</div>
+          <div>• 🔴 <strong>SVIP+</strong> — 红色 4px 圆角左边框 + 浅红背景</div>
+          <div>• ❌ <strong>基础 VIP</strong> — 无评论变色权益</div>
+          <div>• 着色按 <strong>评论作者身份</strong> 走，子级/孙级同样生效</div>
+          <div>• 非 VIP 用户即使在 VIP 帖子下发回复也无边框</div>
+        </div>
+      </details>
+    </div>
+  </div>
+
+  <hr style="border:none;border-top:1px solid var(--border);margin:32px 0 20px;" />
+  <p style="text-align:center;font-size:13px;color:var(--text-tertiary);padding-bottom:40px;">
+    <i class="fa-regular fa-thumbs-up"></i> 满意后告诉我，我提交代码
+  </p>
+
+</div>
+</body>
+</html>
