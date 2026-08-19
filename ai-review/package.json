@@ -1,0 +1,21 @@
+{
+  "name": "cloudforum-ai-review",
+  "private": true,
+  "version": "1.0.0",
+  "description": "CloudForum AI 内容安全审核服务 - Workers AI Llama 3.1",
+  "main": "src/index.ts",
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@hono/node-server": "^1.12.0",
+    "hono": "^4.0.0"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^4.0.0",
+    "typescript": "^5.0.0",
+    "wrangler": "^3.0.0"
+  }
+}

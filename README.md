@@ -130,9 +130,8 @@ npx wrangler pages deploy frontend/dist --project-name=forum-frontend
 
 | 项目 | 说明 |
 |------|------|
-| [CloudForum Android](https://github.com/ShenJunhao-awa/cloudforum-android) | Material 3 Expressive 安卓客户端，Kotlin ＋ Retrofit，对接同一套 API |
-| [AI 审核服务](https://github.com/ShenJunhao-awa/cloudforum-ai-review) | 内容安全审核 Worker（Workers AI Llama 3.1），供论坛发帖审核使用 |
-| [Mailer Worker](https://github.com/ShenJunhao-awa/mailer-worker) | 邮件微服务（Cloudflare Worker），密钥认证 ＋ SMTP 发送，供邮箱验证与找回密码使用 |
+| [AI 审核服务](./ai-review/) | 内容安全审核 Worker（Workers AI Llama 3.1），供论坛发帖审核使用 |
+| [Mailer Worker](./mailer-worker/) | 邮件微服务（Cloudflare Worker），密钥认证 ＋ SMTP 发送，供邮箱验证与找回密码使用 |
 
 ## 📚 文档
 
