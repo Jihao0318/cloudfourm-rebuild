@@ -12,6 +12,8 @@
 
 > CloudForum 是一个完整的论坛应用：前端是 React SPA，后端是跑在 Cloudflare Workers 上的 Hono 应用，数据存在 D1（SQLite）里。请求经 Cloudflare Pages 全球加速，`/api/*` 转发给 Worker，其余路径返回 SPA。开箱即用，在 Cloudflare 免费额度内即可跑起一个功能完备的社区。
 
+> **⚠️ 重要提醒**: 本项目主要由 AI 全权编写，代码中可能存在各种问题、逻辑错误或不合理的设计，请谨慎使用并自行承担风险。如有发现问题，欢迎提交 Issue 或 PR 修复。
+
 ---
 
 ## ✨ 特性
