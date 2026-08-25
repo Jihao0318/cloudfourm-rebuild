@@ -5,7 +5,7 @@ import { useParams, useNavigate, Link } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import { formatRelativeTime, formatDateTime, parseDate } from '../utils/date';
 import { levelFromExp } from '../utils/level';
-import { posts as postsApi, comments as commentsApi, likes as likesApi, reports as reportsApi, bookmarks as bookmarksApi, tips as tipsApi, decorations as decorationsApi, shop as shopApi, thanksApi, items as itemsApi } from '../services/api';
+import { posts as postsApi, comments as commentsApi, likes as likesApi, reports as reportsApi, bookmarks as bookmarksApi, tips as tipsApi, thanksApi, items as itemsApi } from '../services/api';
 import type { Post, Comment } from '../types';
 import { postBgClass } from '../utils/postBg';
 import ReactMarkdown from 'react-markdown';

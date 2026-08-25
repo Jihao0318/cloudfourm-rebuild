@@ -17,7 +17,6 @@ const Admin = lazy(() => import('./pages/Admin'));
 const Moderator = lazy(() => import('./pages/Moderator'));
 const Terms = lazy(() => import('./pages/Terms'));
 const CheckIn = lazy(() => import('./pages/CheckIn'));
-const Tasks = lazy(() => import('./pages/Tasks'));
 const VIP = lazy(() => import('./pages/VIP'));
 const Coins = lazy(() => import('./pages/Coins'));
 const Transactions = lazy(() => import('./pages/Transactions'));
@@ -25,7 +24,6 @@ const Shop = lazy(() => import('./pages/Shop'));
 const Warehouse = lazy(() => import('./pages/Warehouse'));
 const LotteryCoins = lazy(() => import('./pages/LotteryCoins'));
 const Leaderboard = lazy(() => import('./pages/Leaderboard'));
-const Achievements = lazy(() => import('./pages/Achievements'));
 const ActiveEffects = lazy(() => import('./pages/ActiveEffects'));
 const RedPackets = lazy(() => import('./pages/RedPackets'));
 const Appeal = lazy(() => import('./pages/Appeal'));
@@ -69,7 +67,6 @@ export default function App() {
         <Route path="/moderator" element={<Suspense fallback={<PageSkeleton />}><Moderator /></Suspense>} />
         <Route path="/terms" element={<Suspense fallback={<PageSkeleton />}><Terms /></Suspense>} />
         <Route path="/check-in" element={<Suspense fallback={<PageSkeleton />}><CheckIn /></Suspense>} />
-        <Route path="/tasks" element={<Suspense fallback={<PageSkeleton />}><Tasks /></Suspense>} />
         <Route path="/vip" element={<Suspense fallback={<PageSkeleton />}><VIP /></Suspense>} />
         <Route path="/coins" element={<Suspense fallback={<PageSkeleton />}><Coins /></Suspense>} />
         <Route path="/transactions" element={<Suspense fallback={<PageSkeleton />}><Transactions /></Suspense>} />
@@ -77,7 +74,6 @@ export default function App() {
         <Route path="/warehouse" element={<Suspense fallback={<PageSkeleton />}><Warehouse /></Suspense>} />
         <Route path="/lottery" element={<Suspense fallback={<PageSkeleton />}><LotteryCoins /></Suspense>} />
         <Route path="/leaderboard" element={<Suspense fallback={<PageSkeleton />}><Leaderboard /></Suspense>} />
-        <Route path="/achievements" element={<Suspense fallback={<PageSkeleton />}><Achievements /></Suspense>} />
         <Route path="/active-effects" element={<Suspense fallback={<PageSkeleton />}><ActiveEffects /></Suspense>} />
         <Route path="/red-packets" element={<Suspense fallback={<PageSkeleton />}><RedPackets /></Suspense>} />
         <Route path="/appeal/:postId" element={<Suspense fallback={<PageSkeleton />}><Appeal /></Suspense>} />

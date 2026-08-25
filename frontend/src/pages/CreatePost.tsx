@@ -2,7 +2,7 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { useToast } from '../contexts/ToastContext';
 import { useAuth } from '../contexts/AuthContext';
-import { posts as postsApi, categories as categoriesApi, reviewPostContent, items as itemsApi } from '../services/api';
+import { posts as postsApi, categories as categoriesApi, items as itemsApi } from '../services/api';
 import type { Category } from '../types';
 import { POST_BG_OPTIONS } from '../utils/postBg';
 import MarkdownEditor from '../components/MarkdownEditor';
@@ -151,14 +151,7 @@ export default function CreatePost() {
     if (!title.trim() || !content.trim()) { setError('标题和内容不能为空'); return; }
     setError(''); setLoading(true); submitted.current = true;
     try {
-      // 新帖发布前先过 AI 审核（显示审核中动画）
-      if (!isEdit) {
-        setReviewing(true);
-        const fullText = `${title.trim()}\n${content.trim()}`;
-        await reviewPostContent(fullText);
-        setReviewing(false);
-      }
-
+      // 已下线：发帖前 AI 审核由后端异步处理，前端不再等待
       if (isEdit) {
         const res = await postsApi.update(parseInt(id!), {
           title: title.trim(),
