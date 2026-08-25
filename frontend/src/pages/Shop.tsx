@@ -115,7 +115,8 @@ export default function Shop() {
     </div>
   );
 
-  const parseData = (data: string) => {
+  const parseData = (data: string | null | undefined): any => {
+    if (typeof data !== 'string' || data === '') return {};
     try { return JSON.parse(data); } catch { return {}; }
   };
 
