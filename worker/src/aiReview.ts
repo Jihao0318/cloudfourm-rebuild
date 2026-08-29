@@ -13,6 +13,7 @@
 // ============================================================
 
 import { getSetting, setSetting, createNotification } from './db/queries';
+import { isSafeFetchUrl } from './utils/validation';
 import type { Env } from './types';
 
 // judge 响应（与 ai-review 服务 /api/judge 对齐）：{status, verdict: 'pass'|'flag', confidence, reasons, summary}
@@ -44,6 +45,10 @@ async function numSetting(db: D1Database, key: string, fallback: number, min: nu
 async function callJudge(post: Pick<ReviewPostRow, 'title' | 'content'>, env: Env, timeoutMs: number): Promise<JudgeVerdict> {
   if (!env.JUDGE_API_URL || !env.JUDGE_API_KEY) {
     throw new Error('JUDGE_API_URL/JUDGE_API_KEY 未配置，无法执行 AI 审核');
+  }
+  // 出站 URL 安全校验：非 http/https 或指向内网/环回 → 配置错误，抛错走队列重试路径并触发熔断，不盲发
+  if (!isSafeFetchUrl(env.JUDGE_API_URL)) {
+    throw new Error('JUDGE_API_URL 指向不安全地址（内网/环回/非 http 协议）');
   }
   const init: RequestInit = {
     method: 'POST',

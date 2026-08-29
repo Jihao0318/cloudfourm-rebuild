@@ -5,6 +5,14 @@
   "compatibility_date": "2026-06-13",
   "compatibility_flags": ["nodejs_compat"],
 
+  // 旧后端独立域名（与生产 forum-backend 的 api.forum.jgp.dpdns.org 区分）：
+  // legacy 前端（forum-frontend-legacy.pages.dev）通过此域名对接本 worker
+  "routes": [{ "pattern": "api-old.forum.jgp.dpdns.org", "custom_domain": true }],
+
+  // AI 审核后端 service binding：同账号 worker 间公网互调被 CF 1042 拒绝，
+  // callJudge/review 走 binding 内网通道（env.JUDGE 优先，未配置才回退公网 URL）
+  "services": [{ "binding": "JUDGE", "service": "forum-ai" }],
+
   "d1_databases": [
     {
       "binding": "DB",
@@ -18,9 +26,8 @@
     "ENVIRONMENT": "production",
     // Telegraph-Image 图床地址（部署图床后填入，如 https://your-telegraph.example.com）
     "TELEGRAPH_IMAGE_URL": "https://tubed.jgp.dpdns.org",
-    // CORS 白名单：前端线上域名（逗号分隔可配多个）。留空 = 回显任意 Origin（仅本地开发/旧行为兼容）；
-    // 配置后，非白名单 Origin 的浏览器请求将返回 403。上线前请改为真实前端域名。
-    "FRONTEND_URL": ""
+    // CORS 白名单：legacy 前端线上域名（逗号分隔）。留空 = 回显任意 Origin（仅本地开发/旧行为兼容）
+    "FRONTEND_URL": "https://forum-frontend-legacy.pages.dev"
   },
 
   // 定时任务：每天 00:00 UTC（北京时间 08:00）清理注销冷静期到期的账号
@@ -30,11 +37,12 @@
   },
 
   // AI 异步审核链路：发帖成功 → QUEUE.send({postId})（producer）→ 本 worker queue handler 消费
-  // （读帖 → 调 judge（JUDGE_API_URL/JUDGE_API_KEY secrets）→ flag 置 questionable + 通知作者）。
+  // （读帖 → 调 judge（JUDGE_API_URL/JUDGE_API_KEY secrets + JUDGE service binding）→ flag 置 questionable + 通知作者）。
   // 重试由队列内置 retries 承载（max_retries=3）；熔断（连续失败 20 次自动停用）在 aiReview.ts 内实现。
-  // 部署前需先创建队列：npx wrangler queues create forum-ai-review
+  // 注意：队列名带 -legacy 后缀——forum-ai-review 归生产 forum-backend 消费，
+  // 两个 worker 的 AI 审核链路完全独立互不干扰。
   "queues": {
-    "producers": [{ "binding": "QUEUE", "queue": "forum-ai-review" }],
-    "consumers": [{ "queue": "forum-ai-review", "max_batch_size": 10, "max_retries": 3, "max_batch_timeout": 5 }]
+    "producers": [{ "binding": "QUEUE", "queue": "forum-ai-review-legacy" }],
+    "consumers": [{ "queue": "forum-ai-review-legacy", "max_batch_size": 10, "max_retries": 3, "max_batch_timeout": 5 }]
   },
 }

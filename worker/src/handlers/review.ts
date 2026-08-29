@@ -1,9 +1,12 @@
 import { Hono } from 'hono';
 import type { Env } from '../types';
 import { requireAuth } from '../middleware/auth';
+import { isSafeFetchUrl } from '../utils/validation';
 
 // AI 内容审核代理：审核密钥（JUDGE_API_KEY）与审核服务地址（JUDGE_API_URL，完整 /api/judge 端点）
-// 均从 worker secret/var 读取，供前端 reviewPostContent 调用。判定语义与旧前端实现保持一致。
+// 均从 worker secret 读取，供前端 reviewPostContent 调用。
+// 出站通道：配置了 JUDGE service binding 时走绑定内网（同账号 worker 公网互调被 CF 1042 拒绝），
+// 未绑定走公网 fetch（自定义域名不受限）。judge 协议：{verdict:'pass'|'flag', confidence, reasons, summary}。
 const review = new Hono<{ Bindings: Env }>();
 
 review.post('/', requireAuth, async (c) => {
@@ -20,32 +23,35 @@ review.post('/', requireAuth, async (c) => {
 
   // 密钥或审核地址未配置 → 放行（fail-open，保证发帖体验）
   if (!c.env.JUDGE_API_KEY || !c.env.JUDGE_API_URL) return c.json({ success: true, data: { allowed: true } });
+  // 审核地址安全校验：非 http/https 或指向内网/环回 → 视为配置错误，放行并记日志（不盲发）
+  if (!isSafeFetchUrl(c.env.JUDGE_API_URL)) {
+    console.error('[review] JUDGE_API_URL 指向不安全地址，跳过审核放行');
+    return c.json({ success: true, data: { allowed: true } });
+  }
 
   try {
-    const res = await fetch(c.env.JUDGE_API_URL, {
+    const init: RequestInit = {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'x-judge-key': c.env.JUDGE_API_KEY },
-      body: JSON.stringify({ content }),
+      // judge 协议要求 title/content 两个字段；同步端点只有正文，title 传空串
+      body: JSON.stringify({ title: '', content }),
       // 5 秒超时：审核服务挂起时不无限等待，超时走下方 catch → fail-open 放行
       signal: AbortSignal.timeout(5000),
-    });
-    // 密钥错误 / 审核服务异常 → 放行（与旧前端 reviewPostContent 的 fail-open 语义一致）
+    };
+    // 双通道：JUDGE binding 优先（内网，绕开 1042）；未配置走公网 fetch
+    const res = c.env.JUDGE
+      ? await c.env.JUDGE.fetch(new Request(c.env.JUDGE_API_URL, init))
+      : await fetch(c.env.JUDGE_API_URL, init);
+    // 密钥错误 / 审核服务异常 → 放行（fail-open 语义保持）
     if (res.status === 401) return c.json({ success: true, data: { allowed: true } });
     const data: any = await res.json();
+    if (data.status === 'error') return c.json({ success: true, data: { allowed: true } });
 
-    if (data.status === 'reject') {
-      // 只返回原因本体：前端 api.ts reviewPostContent 会拼「审核未通过：」前缀，
-      // 这里不再重复拼接，避免出现「审核未通过：审核未通过：xxx」的双重前缀
-      let detail = '';
-      if (Array.isArray(data.violations) && data.violations.length > 0) {
-        detail = data.violations.map((v: any) => {
-          const reason = (v.reason || '').replace(/^[\d\s、.，,：:]+/, ''); // 去掉 AI 可能混入的编号和符号
-          return `${reason}（${v.violation_phrase || ''}）`;
-        }).join('；');
-      } else {
-        const reason = data.reason || '内容违规';
-        detail = `${reason}${data.violation_phrase ? `（${data.violation_phrase}）` : ''}`;
-      }
+    if (data.verdict === 'flag') {
+      // 只返回原因本体：前端 reviewPostContent 会拼「审核未通过：」前缀，这里不再重复拼接
+      const detail = (typeof data.summary === 'string' && data.summary.trim())
+        || (Array.isArray(data.reasons) && data.reasons.length > 0 ? data.reasons.filter((r: unknown) => typeof r === 'string').join('；') : '')
+        || '内容疑似违规';
       return c.json({ success: true, data: { allowed: false, reason: detail } });
     }
     return c.json({ success: true, data: { allowed: true } });
