@@ -259,4 +259,8 @@ export interface Env {
   // 邮件服务：URL 与 Bearer token，未配置时 forgot 不发送
   MAILER_URL?: string;
   MAILER_TOKEN?: string;
+  /** AI 审核队列 producer（wrangler.jsonc queues.producers）；未绑定（本地无队列时）→ 投递跳过 */
+  QUEUE?: Queue<{ postId: number }>;
+  /** 审核后端 service binding（可选，未配置走公网 JUDGE_API_URL） */
+  JUDGE?: Fetcher;
 }

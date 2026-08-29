@@ -277,6 +277,16 @@ posts.post('/', requireAuth, checkNotBanned, async (c) => {
     ]);
   } catch (e) { console.error('post achievement hook failed', e); }
 
+  // AI 异步审核投递：只投 postId（内容消费侧重读，避免大消息）；
+  // 投递失败仅记日志（fail-open：发帖已成功，绝不阻塞响应）；开关判定在消费侧（省一次 settings 读）
+  if (c.env.QUEUE) {
+    try {
+      await c.env.QUEUE.send({ postId: post.id });
+    } catch (e) {
+      console.error('ai_review.enqueue_failed', e);
+    }
+  }
+
   return c.json({ success: true, data: post, message: '发布成功' }, 201);
 });
 

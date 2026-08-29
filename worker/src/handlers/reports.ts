@@ -36,18 +36,26 @@ reports.post('/', requireAuth, async (c) => {
   }
 
   // 检查是否已举报过同一内容：任意状态（含已驳回）的记录都拒绝再次举报，
-  // 防止被处理后同内容被无限重新举报刷屏（被驳回后需管理员处理或等待后续冷却机制）
+  // 防止被处理后同内容被无限重新举报刷屏（被驳回后需管理员处理或等待后续冷却机制）。
+  // 注意：此预查仅是快速路径（提前返回友好 409，省一次无效写入）；「预查+插入」两步
+  // 非原子，并发权威裁定由唯一索引 idx_reports_reporter_target + 下方 INSERT OR IGNORE 兜底。
   const dup = await c.env.DB
     .prepare('SELECT id FROM reports WHERE target_id = ? AND target_type = ? AND reporter_id = ?')
     .bind(target_id, target_type, user.userId)
     .first();
-  if (dup) return c.json({ success: false, error: '你已经举报过此内容' }, 409);
+  if (dup) return c.json({ success: false, error: '已举报过该内容，请等待处理' }, 409);
 
   try {
-    await c.env.DB
-      .prepare('INSERT INTO reports (post_id, reporter_id, reason, target_type, target_id) VALUES (?, ?, ?, ?, ?)')
+    // OR IGNORE：并发双提交撞上唯一索引时静默跳过，不抛异常，以 meta.changes === 0 判定冲突
+    const result = await c.env.DB
+      .prepare('INSERT OR IGNORE INTO reports (post_id, reporter_id, reason, target_type, target_id) VALUES (?, ?, ?, ?, ?)')
       .bind(postId, user.userId, reason, target_type, target_id)
       .run();
+
+    // changes === 0：预查通过后仍被并发请求抢先插入同一目标，唯一索引裁定为重复举报（与预查同文案）
+    if (result.meta.changes === 0) {
+      return c.json({ success: false, error: '已举报过该内容，请等待处理' }, 409);
+    }
 
     return c.json({ success: true, message: '举报已提交，管理员将尽快审核' });
   } catch (err: any) {

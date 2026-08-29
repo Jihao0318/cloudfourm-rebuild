@@ -300,12 +300,23 @@ async function handleDraw(c: any, user: JWTPayload, count: number, isTenPull: bo
   }
 
   // 4. 发道具（新类型走 user_lottery_items，rename_card 走 user_items）
+  // 道具配置缓存：key = 道具 type，value = shop_items.id（null 表示缺配）。
+  // D1 每次查询都是一次 worker↔D1 网络往返，原实现对每张 rename_card 都重复查一次库，
+  // 十连抽出 N 张同类道具就是 N 次往返；用本 Map 把同类道具的 N 次查询降为 1 次。
+  // 注意：缓存作用域仅限本次抽奖函数体内（不跨请求），避免 Worker 全局态跨请求脏读。
+  const itemCache = new Map<string, { id: number } | null>();
   for (const item of itemGrants) {
     if (item.type === 'rename_card') {
       // rename_card 有 shop_items 记录，走原路径
-      const renameItem = await c.env.DB
-        .prepare("SELECT id FROM shop_items WHERE type = 'rename_card' LIMIT 1")
-        .first<{ id: number }>();
+      // 用 === undefined 判「未查过」：查到 null（缺配）也要写入缓存，
+      // 这样十连多次命中缺配类型时不会重复查库，每次都走原有的跳过分支
+      let renameItem = itemCache.get(item.type);
+      if (renameItem === undefined) {
+        renameItem = await c.env.DB
+          .prepare("SELECT id FROM shop_items WHERE type = 'rename_card' LIMIT 1")
+          .first<{ id: number }>();
+        itemCache.set(item.type, renameItem);
+      }
       if (renameItem) {
         stmts.push(
           c.env.DB.prepare('INSERT INTO user_items (user_id, item_id) VALUES (?, ?)')

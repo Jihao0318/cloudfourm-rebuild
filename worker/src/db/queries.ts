@@ -385,11 +385,14 @@ export async function postExists(db: D1Database, postId: number): Promise<boolea
 }
 
 export async function hardDeletePost(db: D1Database, postId: number): Promise<void> {
-  // 红包余额退回：删帖前查询该帖所有未抢完的红包剩余积分，退给红包 owner
-  const redPackets = await db
-    .prepare('SELECT user_id, remaining_coins FROM red_packets WHERE post_id = ? AND remaining_coins > 0')
-    .bind(postId)
-    .all<{ user_id: number; remaining_coins: number }>();
+  // CAS-first 结算：清零与取剩余同一 batch（D1 batch 即事务，SELECT 与 UPDATE 间无并发插缝），
+  // WHERE remaining_coins > 0 守卫——并发下先到者清零成功，后到者 SELECT 0 行（zeroed=false）跳过，
+  // 绝不重复退款；反过来「先退款后清零」在两步间隙会被并发请求重复退款（双退）
+  const settle = await db.batch([
+    db.prepare('SELECT id, user_id, remaining_coins FROM red_packets WHERE post_id = ? AND remaining_coins > 0').bind(postId),
+    db.prepare('UPDATE red_packets SET remaining_coins = 0, remaining_packets = 0 WHERE post_id = ? AND remaining_coins > 0').bind(postId),
+  ]);
+  const packets = (settle[0].results || []) as Array<{ id: number; user_id: number; remaining_coins: number }>;
 
   const coreStmts: any[] = [
     db.prepare('DELETE FROM likes WHERE target_type = ? AND target_id = ?').bind('post', postId),
@@ -401,7 +404,7 @@ export async function hardDeletePost(db: D1Database, postId: number): Promise<vo
     db.prepare('DELETE FROM page_views WHERE post_id = ?').bind(postId),
     db.prepare("DELETE FROM reports WHERE target_id = ? AND target_type = 'post'").bind(postId),
     db.prepare("DELETE FROM reports WHERE target_id IN (SELECT id FROM comments WHERE post_id = ?) AND target_type = 'comment'").bind(postId),
-    db.prepare('DELETE FROM red_packets WHERE post_id = ?').bind(postId),
+    // 注意：红包行不在这里删——退款金额来自 CAS-first 的原子读数，行要等退款语句执行后才删（见下方 refundStmts 末尾）
     // 付费/密码解锁访问记录、悬空的 post_id 通知、帖子感谢记录（无级联 FK，需显式清理）
     db.prepare('DELETE FROM post_access WHERE post_id = ?').bind(postId),
     db.prepare('DELETE FROM notifications WHERE post_id = ?').bind(postId),
@@ -411,8 +414,9 @@ export async function hardDeletePost(db: D1Database, postId: number): Promise<vo
 
   // 未抢完的红包余额退回 owner：user_balances 行可能不存在，用 ON CONFLICT DO UPDATE 兜底
   // （只加 coins，不加 total_earned——退款不是收益；流水 balance_after 取退款后余额）
+  // 退款金额来自上方 CAS-first batch 的原子读数（不能退款时再查——行此时已清零，查不到）
   const refundStmts: any[] = [];
-  for (const rp of redPackets.results || []) {
+  for (const rp of packets) {
     refundStmts.push(
       db.prepare('INSERT INTO user_balances (user_id, coins) VALUES (?, ?) ON CONFLICT(user_id) DO UPDATE SET coins = coins + excluded.coins')
         .bind(rp.user_id, rp.remaining_coins),
@@ -420,11 +424,15 @@ export async function hardDeletePost(db: D1Database, postId: number): Promise<vo
         .bind(rp.user_id, rp.remaining_coins, '帖子删除，未抢完的红包余额退回', rp.user_id),
     );
   }
+  // 红包行清零且退款入列后再删行：退款 batch 失败时异常上抛、删行不执行、行保留留痕可对账；
+  // 若先删行后退款（旧实现），退款失败即资金丢失且无从核对
+  refundStmts.push(db.prepare('DELETE FROM red_packets WHERE post_id = ?').bind(postId));
 
+  // 执行顺序：CAS 清零结算 → 核心清理 batch → 退款+删行（分块 batch）。
   // 核心清理与退款拆成多个 batch：D1 单次 batch 上限 100 条语句，每个红包对应 2 条退款语句，
-  // 全部塞进一个 batch 时红包数超过 43 个即超限。核心清理先单独执行，退款语句按每组 ≤90 条
-  // （即 ≤45 个红包）切块顺序执行；极端情况下失去整体原子性，但单帖红包超过 43 个在现实中
-  // 不会发生，且单 batch 超限报错更糟
+  // 全部塞进一个 batch 时红包数超过 43 个即超限。核心清理先单独执行，退款语句（含末尾删行）
+  // 按每组 ≤90 条（即 ≤45 个红包）切块顺序执行；极端情况下失去整体原子性，但单帖红包超过
+  // 43 个在现实中不会发生，且单 batch 超限报错更糟
   await db.batch(coreStmts);
   for (let i = 0; i < refundStmts.length; i += 90) {
     await db.batch(refundStmts.slice(i, i + 90));
@@ -802,12 +810,16 @@ export async function verifyCode(
     return false;
   }
 
-  await db
-    .prepare('UPDATE verifications SET used = 1 WHERE id = ?')
+  // CAS 防重放：旧实现 SELECT（used=0）与 UPDATE used=1 两步之间无原子性，并发携带同一验证码的
+  // 双请求都能通过 SELECT 检查、各自 UPDATE 成功（验证码被消费两次 = 重放窗口）。
+  // 改为条件更新（CAS）：UPDATE ... WHERE id = ? AND used = 0，D1 单语句原子，
+  // 并发双请求只有一个 meta.changes = 1（消费成功），另一个 changes = 0 → 返回 false
+  const claim = await db
+    .prepare('UPDATE verifications SET used = 1 WHERE id = ? AND used = 0')
     .bind(latest.id)
     .run();
 
-  return true;
+  return claim.meta.changes > 0;
 }
 
 // ============================================================

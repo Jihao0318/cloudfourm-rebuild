@@ -224,6 +224,13 @@ async function recordLoginFailure(db: D1Database, userId: number): Promise<void>
   }
 }
 
+// 防账号枚举：未知账号也做一次真实 PBKDF2 校验，避免响应时延差异泄露账号存在性（冷启动算一次后复用）
+let dummyHash: string | undefined;
+async function dummyVerify(password: string): Promise<void> {
+  dummyHash ??= await hashPassword('dummy-password-1');
+  await verifyPassword(password, dummyHash);
+}
+
 // 登录
 auth.post('/login', async (c) => {
   const body = await c.req.json();
@@ -251,6 +258,8 @@ auth.post('/login', async (c) => {
   if (!row) {
     // 用户不存在：统一报错防枚举，失败计入 0 桶
     await recordLoginFailure(c.env.DB, 0);
+    // 防枚举：真实账号在下方会做一次完整 PBKDF2 验证，未知账号也先做等量计算再返回，抹平时延差
+    await dummyVerify(password);
     return c.json({ success: false, error: '账号或密码错误' }, 401);
   }
 
@@ -272,12 +281,18 @@ auth.post('/login', async (c) => {
   // 登录成功：清空该用户与 0 桶的失败计数
   await c.env.DB.prepare('DELETE FROM login_attempts WHERE user_id IN (0, ?)').bind(row.id).run();
 
-  // 旧版 bcrypt 哈希验证通过后升级为 PBKDF2
-  if (pwResult.needsUpgrade) {
+  // 渐进升级：旧格式（saltB64.hashB64，含 '.' 且不含 '$'）验证通过后透明重哈希为自描述新格式
+  // （pbkdf2$…，失败仅记日志，不影响登录；重哈希直接用刚验证通过的明文密码，无需用户重新输入）
+  if (row.password_hash.includes('.') && !row.password_hash.includes('$')) {
     try {
-      const newHash = await hashPassword(password);
-      await c.env.DB.prepare('UPDATE users SET password_hash = ? WHERE id = ?').bind(newHash, row.id).run();
-    } catch {} // 升级失败不影响登录
+      const upgraded = await hashPassword(password);
+      await c.env.DB
+        .prepare("UPDATE users SET password_hash = ?, updated_at = datetime('now') WHERE id = ?")
+        .bind(upgraded, row.id)
+        .run();
+    } catch (e) {
+      console.error('password upgrade failed', e);
+    }
   }
 
   // payload 只含身份 + ver（role/vip 一律从 dbUser 读）
@@ -851,6 +866,10 @@ auth.post('/forgot', async (c) => {
       .bind(user.id, mailRes.ok ? '发送重置验证码' : `发送失败: ${mailRes.error}`)
       .run()
       .catch(() => {});
+  } else {
+    // 账号不存在：保持静默成功（统一响应防枚举），但先做一次等量 PBKDF2 计算抹平时延差
+    // （dummyVerify 的入参不影响计算量，传探测输入本身即可）
+    await dummyVerify(normalized);
   }
   return c.json({ success: true, message: '如果该邮箱已注册，验证码已发送至邮箱' });
 });
@@ -865,7 +884,12 @@ auth.post('/reset', async (c) => {
   if (!pwCheck.valid) return c.json({ success: false, error: pwCheck.error }, 400);
 
   const user = await getUserByEmail(c.env.DB, email.trim().toLowerCase());
-  if (!user) return c.json({ success: false, error: '验证码错误或已过期' }, 400);
+  if (!user) {
+    // 防枚举：账号不存在与「验证码错误」返回同一错误文案，这里补一次等量 PBKDF2 计算，
+    // 避免不存在的邮箱响应明显更快从而泄露账号存在性
+    await dummyVerify(new_password || '');
+    return c.json({ success: false, error: '验证码错误或已过期' }, 400);
+  }
 
   const ok = await verifyCode(c.env.DB, user.id, 'password_reset', code.trim());
   if (!ok) return c.json({ success: false, error: '验证码错误或已过期' }, 400);

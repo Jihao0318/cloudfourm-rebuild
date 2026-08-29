@@ -126,7 +126,7 @@ coins.get('/transactions', requireAuth, async (c) => {
   });
 });
 
-// 转账（含手续费，手续费 100% 销毁——通缩出口）
+// 转账（含手续费：50% 入主 admin 账户 transfer_fee，50% 销毁——通缩出口；无 admin 或分成额为 0 时全额销毁）
 coins.post('/transfer', requireAuth, async (c) => {
   const user: JWTPayload = c.get('user');
   const { to_user_id, amount } = await c.req.json();
@@ -170,7 +170,24 @@ coins.post('/transfer', requireAuth, async (c) => {
   const fee = Math.ceil(amount * feeRate / 100);
   const totalDeduct = amount + fee;
 
-  // 手续费全额销毁（无管理员归集）
+  // ===== 手续费 50/50 分成 =====
+  // admin 份额 = floor(fee/2)，入主 admin 账户（type='transfer_fee'；主 admin 取未软删 admin 中 id 最小者）；
+  // 无 admin 或 adminShare=0 时跳过入账（全额销毁），有分成时实际销毁 = fee - adminShare
+  const adminShare = Math.floor(fee / 2);
+  const admin = adminShare > 0
+    ? await c.env.DB
+        .prepare("SELECT id FROM users WHERE role = 'admin' AND deleted_at IS NULL ORDER BY id ASC LIMIT 1")
+        .first<{ id: number }>()
+    : null;
+  // 主 admin 可能尚无余额行：与收款人同样先兜底建行（ON CONFLICT DO NOTHING），保证 batch 里的分成 UPDATE 必命中
+  if (admin) {
+    await c.env.DB
+      .prepare('INSERT INTO user_balances (user_id, coins, total_earned) VALUES (?, 0, 0) ON CONFLICT(user_id) DO NOTHING')
+      .bind(admin.id)
+      .run();
+  }
+  // fee_burn 流水恒记全额手续费（-fee），不因 admin 分成扣减——分成单独记 transfer_fee 正流水，
+  // 全局净额口径 = fee_burn(-fee) + transfer_fee(+adminShare) = -(fee - adminShare)，才与真实销毁额一致
   const burnAmount = fee;
 
   // 扣款先单独执行并检查 changes：若放在 batch 里，扣款 UPDATE 未命中（余额不足）时
@@ -185,15 +202,26 @@ coins.post('/transfer', requireAuth, async (c) => {
   }
 
   // 扣款成功后才执行入账 + 流水（同一 batch 原子提交）
-  const batchStmts = [
+  // 记账不变式：付款人两行流水 transfer_out(-amount) + fee_burn(-fee) 合计 = -(amount+fee) = 实际扣款额（避免双重记账）
+  const batchStmts: D1PreparedStatement[] = [
     c.env.DB.prepare('UPDATE user_balances SET coins = coins + ?, total_earned = total_earned + ? WHERE user_id = ?').bind(amount, amount, to_user_id),
-    // 手续费 100% 销毁：不写入任何账户，积分永久消失
+    // transfer_out 记净额 -amount；balance_after 经 SELECT coins 复用扣款后余额（等价 UPDATE...RETURNING）
     c.env.DB.prepare('INSERT INTO coin_transactions (user_id, type, amount, balance_after, description) SELECT ?, ?, ?, coins, ? FROM user_balances WHERE user_id = ?').bind(user.userId, 'transfer_out', -amount, `to:${to_user_id}|fee:${fee}`, user.userId),
     c.env.DB.prepare('INSERT INTO coin_transactions (user_id, type, amount, balance_after, description) SELECT ?, ?, ?, coins, ? FROM user_balances WHERE user_id = ?').bind(to_user_id, 'transfer_in', amount, `from:${user.userId}`, to_user_id),
-    // 销毁记录（记在转账人头上，用于审计）
+    // 销毁记录（记在转账人头上，用于审计；恒记全额 -fee，有 admin 分成时真实销毁 = fee - adminShare，另见 admin 侧 transfer_fee 正流水）
     c.env.DB.prepare("INSERT INTO coin_transactions (user_id, type, amount, balance_after, description) SELECT ?, 'fee_burn', ?, coins, ? FROM user_balances WHERE user_id = ?")
       .bind(user.userId, -burnAmount, `手续费销毁 #${user.userId} → #${to_user_id}`, user.userId),
   ];
+
+  // admin 份额入账（floor(fee/2)）：分成 UPDATE 与 transfer_fee 流水与收款人入账同一 batch 原子提交，
+  // 流水 balance_after 经 SELECT coins 复用入账后余额；无 admin 或 adminShare=0 时一条不推，手续费全额销毁（全局净额 = -fee）
+  if (admin) {
+    batchStmts.push(
+      c.env.DB.prepare('UPDATE user_balances SET coins = coins + ?, total_earned = total_earned + ? WHERE user_id = ?').bind(adminShare, adminShare, admin.id),
+      c.env.DB.prepare("INSERT INTO coin_transactions (user_id, type, amount, balance_after, description) SELECT ?, 'transfer_fee', ?, coins, ? FROM user_balances WHERE user_id = ?")
+        .bind(admin.id, adminShare, `转账手续费分成 #${user.userId} → #${to_user_id}`, admin.id),
+    );
+  }
 
   await c.env.DB.batch(batchStmts);
 

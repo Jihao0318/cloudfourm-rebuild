@@ -37,8 +37,13 @@ unban.post('/request', requireAuth, async (c) => {
 
   // 原子提交：条件扣款 + 条件插入申请 + 交易流水，全部在同一事务（batch）内完成，
   // 杜绝并发双提交/双扣款/双申请。
-  // 扣款 UPDATE 携带全部前置条件（余额充足 + 无待审核申请），单条语句原子判定（闸门）；
-  // 后续 INSERT 通过上一语句的 changes() 判断扣款是否命中——仅当扣款成功且仍无待审核申请才插入申请。
+  // 扣款 UPDATE 携带全部前置条件（余额充足 + 无待审核申请），单条语句原子判定（闸门），
+  // 兼作「已有 pending 申请」的快速路径——有待审申请时不扣款、不插入；
+  // 后续 INSERT OR IGNORE 通过上一语句的 changes() 判断扣款是否命中。pending 冲突的
+  // 权威裁定由部分唯一索引 idx_unban_pending_user（074 迁移）+ OR IGNORE 兜底：
+  // 撞索引时静默跳过（changes=0 → 409），无需应用层重复预查。
+  // status 无需显式写入：012 迁移定义 status TEXT NOT NULL DEFAULT 'pending'，
+  // 默认值即为 'pending'，部分唯一索引对本插入生效。
   const results = await c.env.DB.batch([
     c.env.DB.prepare(`
       UPDATE user_balances SET coins = coins - ?, total_spent = total_spent + ?
@@ -46,11 +51,10 @@ unban.post('/request', requireAuth, async (c) => {
         AND NOT EXISTS (SELECT 1 FROM unban_requests WHERE user_id = ? AND status = 'pending')
     `).bind(UNBAN_PRICE, UNBAN_PRICE, user.userId, UNBAN_PRICE, user.userId),
     c.env.DB.prepare(`
-      INSERT INTO unban_requests (user_id, coins_paid)
+      INSERT OR IGNORE INTO unban_requests (user_id, coins_paid)
       SELECT ?, ?
       WHERE (SELECT changes()) = 1
-        AND NOT EXISTS (SELECT 1 FROM unban_requests WHERE user_id = ? AND status = 'pending')
-    `).bind(user.userId, UNBAN_PRICE, user.userId),
+    `).bind(user.userId, UNBAN_PRICE),
     // 交易记录：仅当申请插入成功才记录（balance_after 取扣款后余额）
     c.env.DB.prepare(`
       INSERT INTO coin_transactions (user_id, type, amount, balance_after, description)
@@ -61,12 +65,14 @@ unban.post('/request', requireAuth, async (c) => {
 
   const insertChanged = (results[1]?.meta.changes ?? 0) > 0;
   if (!insertChanged) {
-    // 原子判定未通过：并发下要么已有待审核申请，要么余额不足（预检与扣款之间被并发消费）
+    // changes === 0 的两种可能：① 扣款闸门未命中（余额不足，或已有待审申请故未扣款）；
+    // ② 扣款命中但 INSERT OR IGNORE 撞上 idx_unban_pending_user（并发双提交的兜底裁定，
+    //    保证每人至多一条 pending 申请）。下方查询区分两种情况，分别返回 409 / 400。
     const pending = await c.env.DB
       .prepare("SELECT id FROM unban_requests WHERE user_id = ? AND status = 'pending'")
       .bind(user.userId)
       .first();
-    if (pending) return c.json({ success: false, error: '已有待审核的申请，请耐心等待' }, 409);
+    if (pending) return c.json({ success: false, error: '已有待处理的解封申请' }, 409);
     return c.json({ success: false, error: `积分不足，解封需要 ${UNBAN_PRICE} 积分` }, 400);
   }
 

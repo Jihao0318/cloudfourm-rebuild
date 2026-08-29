@@ -5,6 +5,7 @@ import { cleanupUser } from './middleware/auth';
 import { cleanupOldPageViews, hardDeletePost } from './db/queries';
 import { cleanupTransactions } from './handlers/coins';
 import { recalculateLeaderboard } from './handlers/leaderboard';
+import { consumeAiReviewBatch } from './aiReview';
 
 const app = new Hono<{ Bindings: Env }>();
 
@@ -180,5 +181,11 @@ export default {
         console.error('scheduled recalculate leaderboard error:', e);
       }
     })());
+  },
+
+  // AI 异步审核消费端（队列 forum-ai-review）：逐条审核新帖（读帖 → 调 judge → flag 置 questionable + 通知作者）；
+  // 失败抛出让该批消息走队列重试（max_retries=3），连续失败熔断逻辑见 aiReview.ts
+  async queue(batch: MessageBatch<{ postId: number }>, env: Env, _ctx: ExecutionContext) {
+    await consumeAiReviewBatch(batch, env);
   },
 };
