@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
-import { Link, useNavigate, useSearchParams } from 'react-router-dom';
+import { Link, useNavigate, useSearchParams, useNavigationType } from 'react-router-dom';
 import { posts as postsApi, categories as categoriesApi } from '../services/api';
 import type { Post, Category } from '../types';
 import { Helmet } from 'react-helmet-async';
@@ -24,11 +24,24 @@ function extractFirstImage(content?: string): string | null {
   return match ? match[1] : null;
 }
 
+// ===== 返回首页的滚动恢复缓存 =====
+// 离开首页时保存列表数据/页码/滚动位置；POP 返回时先用缓存立即渲染完整列表
+// （高度瞬间恢复，骨架屏塌陷导致的浏览器滚动恢复失败不再发生），再精确滚回原位置。
+// 数据超过 60s 视为过期（返回场景通常在几秒~几十秒内），过期则正常重新加载。
+interface HomeCache {
+  postList: Post[];
+  total: number;
+  page: number;
+  savedY: number;
+  ts: number;
+  key: string;
+}
+let homeCache: HomeCache | null = null;
+
 export default function Home() {
   const navigate = useNavigate();
-  const [postList, setPostList] = useState<Post[]>([]);
+  
   const [categoryList, setCategoryList] = useState<Category[]>([]);
-  const [total, setTotal] = useState(0);
   const [page, setPage] = useState(1);
   // 板块筛选与 URL 同步：板块页 /boards 点击卡片 → /?categoryId=X 进入本页并自动筛选
   // URL 是唯一事实源：读 searchParams 派生筛选状态，浏览器前进/后退天然生效
@@ -43,12 +56,21 @@ export default function Home() {
   const [searchInput, setSearchInput] = useState('');
   const [drawerOpen, setDrawerOpen] = useState(false);
   const debounceRef = useRef<ReturnType<typeof setTimeout>>();
-  const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const abortRef = useRef<AbortController | null>(null);
   const isPageChangeOnly = useRef(false);
   const { user } = useAuth();
   const pageSize = 20;
+
+  // POP 返回时命中未过期缓存 → 用缓存数据初始化（跳过骨架屏、高度立即恢复），
+  // 挂载后精确滚回离开时的位置；否则正常加载。数据超过 60s 视为过期。
+  const navigationType = useNavigationType();
+  const cacheKey = `${categoryId || ''}|${sort}|${searchQuery}|${feed ? 1 : 0}`;
+  const cacheUsable = navigationType === 'POP' && homeCache !== null && homeCache.key === cacheKey && Date.now() - homeCache.ts < 60_000;
+  const restoredRef = useRef(cacheUsable);
+  const [postList, setPostList] = useState<Post[]>(() => (cacheUsable && homeCache ? homeCache.postList : []));
+  const [total, setTotal] = useState<number>(() => (cacheUsable && homeCache ? homeCache.total : 0));
+  const [loading, setLoading] = useState<boolean>(() => !(cacheUsable && homeCache));
   // ponytail: 纯翻页时用此函数，通知 loadPosts 不闪骨架屏
   const goToPage = (n: number) => { isPageChangeOnly.current = true; setPage(n); };
 
@@ -83,8 +105,51 @@ export default function Home() {
   }, []);
 
   useEffect(() => {
+    // POP 返回且已用缓存渲染：跳过首次加载（列表数据已是缓存内容）
+    if (restoredRef.current) { restoredRef.current = false; return; }
     loadPosts();
   }, [page, categoryId, sort, searchQuery, feed]);
+
+  // 离开首页时保存列表数据与滚动位置（cleanup 在新页面 effect 之前跑，此时 scrollY 仍是首页位置）
+  useEffect(() => {
+    return () => {
+      homeCache = {
+        postList, total, page,
+        savedY: window.scrollY,
+        ts: Date.now(),
+        key: `${categoryId || ''}|${sort}|${searchQuery}|${feed ? 1 : 0}`,
+      };
+    };
+  }, [postList, total, page, categoryId, sort, searchQuery, feed]);
+
+  // POP 返回且有缓存：列表已同步渲染（高度足够），精确滚回离开时的位置；
+  // POP 但无缓存（过期/条件变化）：浏览器恢复会因骨架屏塌陷失败，显式回顶部
+  useEffect(() => {
+    if (restoredRef.current && homeCache) {
+      // 重试钉住：恢复瞬间图片/字体可能尚未加载完成（内容高度会变化），
+      // 在约 2 秒内持续校正到目标位置；用户一旦触摸/滚轮即停止（把控制权交还用户）
+      const savedY = homeCache.savedY;
+      let cancelled = false;
+      let tries = 0;
+      const stop = () => {
+        cancelled = true;
+        window.removeEventListener('touchstart', stop);
+        window.removeEventListener('wheel', stop);
+      };
+      window.addEventListener('touchstart', stop, { passive: true });
+      window.addEventListener('wheel', stop, { passive: true });
+      const tick = () => {
+        if (cancelled) return;
+        window.scrollTo(0, savedY);
+        if (++tries < 12) setTimeout(() => requestAnimationFrame(tick), 120);
+        else stop();
+      };
+      requestAnimationFrame(tick);
+    } else if (navigationType === 'POP') {
+      window.scrollTo(0, 0);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const loadCategories = async () => {
     try {
@@ -396,8 +461,8 @@ export default function Home() {
           >
             上一页
           </button>
-          {/* 桌面（sm+）完整页码；移动端整组隐藏，只保留当前页 */}
-          <span className="hidden sm:inline-flex flex-wrap justify-center gap-2">
+          {/* 页码组：移动端同样显示（按钮紧凑化），支持直接跳页 */}
+          <span className="inline-flex flex-wrap justify-center gap-1">
             {Array.from({ length: Math.min(totalPages, 10) }, (_, i) => {
               let pageNum: number;
               if (totalPages <= 10) {
@@ -413,7 +478,7 @@ export default function Home() {
                 <button
                   key={pageNum}
                   onClick={() => goToPage(pageNum)}
-                  className={`px-3 py-1.5 min-w-[36px] rounded-lg text-sm ${
+                  className={`px-2 py-1.5 min-w-[32px] rounded-lg text-sm ${
                     page === pageNum ? 'bg-primary-600 text-white' : 'border hover:bg-gray-50'
                   }`}
                 >
@@ -421,10 +486,6 @@ export default function Home() {
                 </button>
               );
             })}
-          </span>
-          {/* 移动端当前页（sm 以下显示） */}
-          <span className="sm:hidden px-3 py-1.5 min-w-[36px] rounded-lg text-sm bg-primary-600 text-white text-center">
-            {page}
           </span>
           <button
             onClick={() => goToPage(Math.min(totalPages, page + 1))}

@@ -1,5 +1,6 @@
 import { lazy, Suspense } from 'react';
 import { Routes, Route } from 'react-router-dom';
+import ScrollToTop from './components/ScrollToTop';
 import Layout from './components/Layout';
 import ErrorBoundary from './components/ErrorBoundary';
 import Skeleton from 'react-loading-skeleton';
@@ -53,6 +54,7 @@ function NotFound() {
 export default function App() {
   return (
     <ErrorBoundary>
+    <ScrollToTop />
     <Routes>
       <Route element={<Layout />}>
         <Route path="/" element={<Suspense fallback={<PageSkeleton />}><Home /></Suspense>} />

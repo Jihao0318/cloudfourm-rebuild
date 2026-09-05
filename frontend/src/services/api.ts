@@ -439,6 +439,13 @@ export const admin = {
       body: JSON.stringify({ role }),
     }),
 
+  // 管理员设置邮箱验证状态（verified: 1 已验证 / 0 未验证）
+  setEmailVerified: (id: number, verified: 0 | 1) =>
+    request<null>(`/admin/users/${id}/email-verified`, {
+      method: 'PUT',
+      body: JSON.stringify({ verified }),
+    }),
+
   getSettings: () => request<Record<string, string>>('/admin/settings'),
 
   updateSettings: (settings: Record<string, string>) =>

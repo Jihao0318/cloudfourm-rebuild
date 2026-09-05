@@ -205,6 +205,26 @@ admin.delete('/users/:id/ban', async (c) => {
 // ===== 密码重置 + 安全日志 =====
 
 // 重置用户密码（仅管理员）：生成临时密码，明文仅此一次返回，并记安全日志
+// 管理员直接设置邮箱验证状态：线下核实身份后人工放行（verified=1），
+// 或强制要求用户重新验证（verified=0，配合邮箱验证开启时下次登录将被拦）
+admin.put('/users/:id/email-verified', requireAdminRole, async (c) => {
+  const id = parseId(c.req.param('id') ?? '');
+  if (id === null) return c.json({ success: false, error: '无效的用户ID' }, 400);
+  const { verified } = await c.req.json().catch(() => ({}));
+  if (verified !== 0 && verified !== 1) return c.json({ success: false, error: '参数无效（verified 须为 0 或 1）' }, 400);
+  const res = await c.env.DB
+    .prepare("UPDATE users SET email_verified = ?, updated_at = datetime('now') WHERE id = ? AND deleted_at IS NULL")
+    .bind(verified, id)
+    .run();
+  if (!res.meta.changes) return c.json({ success: false, error: '用户不存在' }, 404);
+  await c.env.DB
+    .prepare("INSERT INTO security_logs (user_id, action, detail) VALUES (?, 'email_verified_admin', ?)")
+    .bind(id, verified === 1 ? '管理员将邮箱标记为已验证' : '管理员将邮箱标记为未验证')
+    .run()
+    .catch(() => {});
+  return c.json({ success: true, message: verified === 1 ? '已标记为已验证' : '已标记为未验证' });
+});
+
 admin.put('/users/:id/reset-password', requireAdminRole, async (c) => {
   try {
     const targetId = parseId(c.req.param('id'));
