@@ -145,6 +145,12 @@ admin.put('/settings', async (c) => {
     'review_reject_coins', 'review_takedown_coins', 'report_reward_coins',
     'appeal_review_level',
     'soft_delete_retention_days',
+    // AI 异步审核（aiReview.ts 消费）：开关（含熔断自动关闭后的人工恢复）、
+    // judge 超时（ai_review_timeout_ms）、熔断阈值（ai_review_circuit_break_threshold）、
+    // 置信度分流阈值（ai_review_confidence_threshold，0-100：pass 低于该值进待复核）；
+    // ai_review_fail_count 为内部连续失败计数（任一成功自动清零），不对后台开放
+    'ai_review_enabled', 'ai_review_timeout_ms', 'ai_review_circuit_break_threshold',
+    'ai_review_confidence_threshold',
   ]);
   for (const [key, value] of Object.entries(settings)) {
     if (!ALLOWED_KEYS.has(key)) continue;

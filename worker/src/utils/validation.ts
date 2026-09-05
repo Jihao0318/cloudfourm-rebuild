@@ -20,13 +20,7 @@ export function validateEmail(email: string): ValidationResult {
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
     return { valid: false, error: '邮箱格式不正确' };
   }
-  if (!email.toLowerCase().endsWith('@qq.com')) {
-    return { valid: false, error: '仅支持 QQ 邮箱注册' };
-  }
-  const localPart = email.split('@')[0];
-  if (!/^\d{5,11}$/.test(localPart)) {
-    return { valid: false, error: '请输入真实QQ号' };
-  }
+  // 邮箱域白名单已移除（用户要求：允许任意邮箱注册；后期按需在后台/此处加放行域名清单）
   return { valid: true };
 }
 

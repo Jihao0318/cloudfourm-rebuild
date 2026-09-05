@@ -38,10 +38,18 @@ review.post('/', requireAuth, async (c) => {
       // 5 秒超时：审核服务挂起时不无限等待，超时走下方 catch → fail-open 放行
       signal: AbortSignal.timeout(5000),
     };
-    // 双通道：JUDGE binding 优先（内网，绕开 1042）；未配置走公网 fetch
-    const res = c.env.JUDGE
-      ? await c.env.JUDGE.fetch(new Request(c.env.JUDGE_API_URL, init))
-      : await fetch(c.env.JUDGE_API_URL, init);
+    // 双通道：JUDGE binding 优先（内网，绕开 1042）；binding 5xx/异常回退公网；未配置走公网 fetch
+    let res: Response;
+    if (c.env.JUDGE) {
+      try {
+        const bindingRes = await c.env.JUDGE.fetch(new Request(c.env.JUDGE_API_URL, init));
+        res = bindingRes.status < 500 ? bindingRes : await fetch(c.env.JUDGE_API_URL, init);
+      } catch {
+        res = await fetch(c.env.JUDGE_API_URL, init);
+      }
+    } else {
+      res = await fetch(c.env.JUDGE_API_URL, init);
+    }
     // 密钥错误 / 审核服务异常 → 放行（fail-open 语义保持）
     if (res.status === 401) return c.json({ success: true, data: { allowed: true } });
     const data: any = await res.json();

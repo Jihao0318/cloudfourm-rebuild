@@ -5,9 +5,10 @@ import { Helmet } from 'react-helmet-async';
 import { useAuth } from '../contexts/AuthContext';
 import { useToast } from '../contexts/ToastContext';
 import { formatDate, formatRelativeTime } from '../utils/date';
-import { users as usersApi, auth as authApi, upload as uploadApi, posts as postsApi, bookmarks as bookmarksApi, follows as followsApi, invites as invitesApi } from '../services/api';
-import type { PublicUser, Post } from '../types';
+import { users as usersApi, auth as authApi, upload as uploadApi, posts as postsApi, bookmarks as bookmarksApi, follows as followsApi, achievementsApi, invites as invitesApi } from '../services/api';
+import type { PublicUser, Post, AchievementInfo } from '../types';
 import { levelFromExp } from '../utils/level';
+import { rewardLabel } from '../utils/achievements';
 import Avatar from '../components/Avatar';
 import BackButton from '../components/BackButton';
 import ConfirmModal from '../components/ConfirmModal';
@@ -81,6 +82,10 @@ export default function Profile() {
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
   const [showBanDetail, setShowBanDetail] = useState(false);
+  const [achData, setAchData] = useState<{ achievements: AchievementInfo[]; unlocked_count: number; total: number } | null>(null);
+  const [achLoading, setAchLoading] = useState(false);
+  const [achError, setAchError] = useState(false);
+  const [achCollapsed, setAchCollapsed] = useState(false); // 成就栏折叠（默认展开）
   const [deleteModal, setDeleteModal] = useState<{ step: 1 | 2 | 3; password: string; countdown: number; error?: string; verifying?: boolean } | null>(null);
   const [unbanModal, setUnbanModal] = useState(false);
   const [logoutModal, setLogoutModal] = useState(false);
@@ -115,6 +120,29 @@ export default function Profile() {
     const t = setTimeout(() => setPwResendCd(c => c - 1), 1000);
     return () => clearTimeout(t);
   }, [pwResendCd]);
+
+  // 成就墙 — 仅自己的主页（成就接口只支持当前登录用户）
+  // 抽成可复用函数：挂载时拉一次 + 切到「成长」tab 时重新拉取（用户可能在其他页面解锁了新成就）
+  const fetchAchievements = useCallback(async () => {
+    if (!isOwnProfile) return;
+    setAchLoading(true);
+    setAchError(false);
+    try {
+      const res = await achievementsApi.list();
+      if (res.success && res.data) setAchData(res.data);
+      else setAchError(true); // 接口业务失败（如 500）→ 展示错误态而非永久「加载中」
+    } catch {
+      setAchError(true); // 网络错误 → 展示错误态 + 重试按钮
+    }
+    setAchLoading(false);
+  }, [isOwnProfile]);
+  useEffect(() => {
+    if (isOwnProfile) fetchAchievements();
+  }, [isOwnProfile, fetchAchievements]);
+  // tab 切到「成长」时重新拉取，保证成就数据新鲜（挂载时默认 tab 为 posts，不会重复请求）
+  useEffect(() => {
+    if (tab === 'growth' && isOwnProfile) fetchAchievements();
+  }, [tab, isOwnProfile, fetchAchievements]);
 
   // 邀请数据（仅自己主页）
   const loadInvites = useCallback(() => {
@@ -592,6 +620,55 @@ export default function Profile() {
             </>
           );
         })()}
+        {isOwnProfile && (
+          <div className="mt-5 pt-5 border-t">
+            <div className="flex items-center justify-between mb-3">
+              <button onClick={() => setAchCollapsed(!achCollapsed)} className="flex items-center gap-2 text-sm font-semibold text-gray-900 hover:text-primary-600 transition">
+                🏆 成就
+                <span className={`text-[10px] text-gray-400 transition-transform ${achCollapsed ? '' : 'rotate-180'}`}>▼</span>
+              </button>
+              <div className="flex items-center gap-3">
+                {achData && <span className="text-xs text-gray-400">已解锁 {achData.unlocked_count}/{achData.total}</span>}
+                <Link to="/achievements" className="text-xs text-primary-600 hover:text-primary-700 font-medium">查看成就殿堂 →</Link>
+              </div>
+            </div>
+            {achCollapsed ? (
+              <p className="text-xs text-gray-400 text-center py-3">成就已折叠，点击标题展开</p>
+            ) : achData ? (
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                {/* 已达成优先显示 */}
+                {[...achData.achievements].sort((a, b) => Number(b.unlocked) - Number(a.unlocked)).map(a => (
+                  <div key={a.key} className={`p-3 rounded-xl border text-center ${a.unlocked ? 'bg-primary-50 border-primary-200' : 'bg-gray-50 border-gray-200'}`}>
+                    <div className={`text-lg mb-1 ${a.unlocked ? '' : 'opacity-40 grayscale'}`}>{a.unlocked ? '🏅' : '🔒'}</div>
+                    <div className={`text-xs font-medium ${a.unlocked ? 'text-primary-700' : 'text-gray-500'}`}>{a.name}</div>
+                    <div className="text-[11px] text-gray-400 mt-0.5 line-clamp-2">{a.desc}</div>
+                    {!a.unlocked && (
+                      a.rewards && a.rewards.length > 0 ? (
+                        <div className="mt-1 flex flex-wrap justify-center gap-1">
+                          {a.rewards.map((r, i) => (
+                            <span key={i} className="text-[9px] bg-amber-50 text-amber-700 border border-amber-100 rounded px-1 py-0.5">{rewardLabel(r)}</span>
+                          ))}
+                        </div>
+                      ) : (
+                        <div className="text-[10px] text-amber-600 mt-0.5">+{a.coins} 积分</div>
+                      )
+                    )}
+                  </div>
+                ))}
+              </div>
+            ) : achError ? (
+              <div className="text-center py-4">
+                <p className="text-red-500 text-xs mb-3">成就加载失败</p>
+                <button onClick={fetchAchievements} disabled={achLoading}
+                  className="px-4 py-1.5 border border-primary-200 text-primary-600 rounded-lg text-xs font-medium hover:bg-primary-50 transition disabled:opacity-50">
+                  {achLoading ? '加载中...' : '重试'}
+                </button>
+              </div>
+            ) : (
+              <p className="text-xs text-gray-400 text-center py-4">加载中...</p>
+            )}
+          </div>
+        )}
       </div>
           )}
 

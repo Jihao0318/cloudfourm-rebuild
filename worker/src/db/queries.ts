@@ -907,7 +907,7 @@ export async function createNotification(
   db: D1Database,
   userId: number,
   actorId: number | null,
-  type: 'reply' | 'like_post' | 'like_comment' | 'system',
+  type: 'reply' | 'like_post' | 'like_comment' | 'system' | 'post_takedown' | 'post_rejected',
   postId?: number,
   commentId?: number,
   content?: string

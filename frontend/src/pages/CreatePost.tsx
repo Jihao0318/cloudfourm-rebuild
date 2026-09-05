@@ -35,7 +35,6 @@ export default function CreatePost() {
   const [categories, setCategories] = useState<Category[]>([]);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
-  const [reviewing, setReviewing] = useState(false);
   const [draftRestored, setDraftRestored] = useState(false);
   const [draftData, setDraftData] = useState<{ title: string; content: string; categoryId: number | ''; savedAt: number } | null>(null);
   const draftTimer = useRef<ReturnType<typeof setTimeout>>();
@@ -151,7 +150,9 @@ export default function CreatePost() {
     if (!title.trim() || !content.trim()) { setError('标题和内容不能为空'); return; }
     setError(''); setLoading(true); submitted.current = true;
     try {
-      // 已下线：发帖前 AI 审核由后端异步处理，前端不再等待
+      // 前端不再做发帖前同步 AI 审核：帖子直接发布，AI 异步审核在后端队列进行
+      // （不确定 → 待复核；确定违规 → AI 下架，详见 worker/src/aiReview.ts）
+
       if (isEdit) {
         const res = await postsApi.update(parseInt(id!), {
           title: title.trim(),
@@ -177,16 +178,10 @@ export default function CreatePost() {
         }
       }
     } catch (err: any) {
-      if (err.message?.startsWith('审核未通过')) {
-        toast(err.message, 'error');
-        setError(err.message);
-      } else {
-        toast(err.message || '发布失败', 'error');
-        setError(err.message || '发布失败');
-      }
+      toast(err.message || '发布失败', 'error');
+      setError(err.message || '发布失败');
       submitted.current = false;
     }
-    setReviewing(false);
     setLoading(false);
   };
 
@@ -349,9 +344,8 @@ export default function CreatePost() {
         <div className="flex items-center gap-3 pt-2">
           <button id="post-submit-btn" type="submit" disabled={loading || titleOver || (isEdit && !postLoaded)}
             className="bg-primary-600 text-white px-6 py-2.5 rounded-xl font-medium hover:bg-primary-700 disabled:opacity-50 transition-colors shadow-sm flex items-center gap-2">
-            {reviewing && <span className="inline-block w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin mr-1" />}
-            {loading && !reviewing && <span className="inline-block w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin mr-1" />}
-            {reviewing ? 'AI 审核中...' : loading ? '发布中...' : isEdit ? '保存修改' : '发布帖子'}
+            {loading && <span className="inline-block w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin mr-1" />}
+            {loading ? '发布中...' : isEdit ? '保存修改' : '发布帖子'}
           </button>
           <button type="button" onClick={() => {
             if (hasContent && !submitted.current) { setConfirmLeave(true); return; }

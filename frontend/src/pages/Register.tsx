@@ -170,7 +170,9 @@ export default function Register() {
     try {
       const result = await register(username, email, password, inviteCode || undefined);
       if (result.success) {
-        setRegistered(true);
+        // 注册成功（用户信息已入库）→ 直接进入邮箱验证页，验证通过后即可登录
+        navigate(`/verify-email?account=${encodeURIComponent(email.trim())}`);
+        return;
       } else {
         setError(result.error || '注册失败');
       }
@@ -196,10 +198,14 @@ export default function Register() {
               <svg className="w-7 h-7 text-green-600" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12" /></svg>
             </div>
             <h2 className="text-lg font-bold mb-2">注册成功 🎉</h2>
-            <p className="text-xs text-gray-500 mb-6">验证码已发送至你的邮箱，请到个人中心完成邮箱验证</p>
+            <p className="text-xs text-gray-500 mb-6">验证码已发送至你的邮箱，完成邮箱验证后即可登录</p>
+            <button onClick={() => navigate(`/verify-email?account=${encodeURIComponent(email.trim())}`)}
+              className="w-full bg-primary-600 text-white py-2.5 rounded-lg font-medium hover:bg-primary-700 transition mb-3">
+              去验证邮箱
+            </button>
             <button onClick={() => navigate('/')}
-              className="w-full bg-primary-600 text-white py-2.5 rounded-lg font-medium hover:bg-primary-700 transition">
-              去首页
+              className="w-full border text-gray-600 py-2.5 rounded-lg font-medium hover:bg-gray-50 transition">
+              暂时跳过，去首页
             </button>
           </div>
         ) : (

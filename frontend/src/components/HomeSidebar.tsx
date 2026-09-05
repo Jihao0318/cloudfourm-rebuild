@@ -14,7 +14,17 @@ interface RankUser {
   avatar_url: string | null;
 }
 
-// 推荐位（/posts/featured）已从后端下线；全站荣誉（成就殿堂）亦下线
+interface FeaturedPost {
+  id: number;
+  title: string;
+  username: string;
+  endsAt: string;
+}
+
+// 全站荣誉框内条目（可扩展：以后新增全站性质入口只需往此数组加对象）
+const SITE_FEATURES = [
+  { emoji: '🏛️', title: '成就殿堂', desc: '全部成就 · 达成人数公开', path: '/achievements' },
+];
 
 // 右侧边栏：我的（头像/昵称 → 个人主页 + 快捷入口）/ 推荐位 / 热门帖子 / 积分排行前三
 // 克制风格：白卡 + 细边框 + 灰色小标题（大厂论坛通用模式），lg+ 显示
@@ -23,6 +33,7 @@ export default function HomeSidebar() {
   const { user } = useAuth();
   const [balance, setBalance] = useState<number | null>(null);
   const [announcement, setAnnouncement] = useState<{ text: string; ver: string } | null>(null);
+  const [featured, setFeatured] = useState<FeaturedPost[]>([]);
   const [hotPosts, setHotPosts] = useState<{ id: number; title: string; username: string; comment_count: number }[]>([]);
   const [topUsers, setTopUsers] = useState<RankUser[]>([]);
 
@@ -55,6 +66,8 @@ export default function HomeSidebar() {
   useEffect(() => {
     if (user) refreshBalance();
     loadAnnouncement();
+    // 推荐位：使用推荐卡的帖子（侧边栏曝光，不插队主页列表）
+    postsApi.featured().then(r => { if (r.success) setFeatured(r.data || []); }).catch(() => {});
     postsApi.list({ sort: 'hot', pageSize: 5 })
       .then(r => { if (r.success) setHotPosts((r.data || []).map((p: any) => ({ id: p.id, title: p.title, username: p.username || '匿名同学', comment_count: p.comment_count }))); })
       .catch(() => {});
@@ -93,6 +106,7 @@ export default function HomeSidebar() {
             </Link>
             <div className="grid grid-cols-2 gap-1.5">
               {[
+                { to: '/tasks', icon: faBolt, label: '任务' },
                 { to: '/warehouse', icon: faCoins, label: '仓库' },
                 { to: '/red-packets', icon: faGift, label: '红包' },
                 { to: '/active-effects', icon: faMagic, label: '活跃效果' },
@@ -131,7 +145,44 @@ export default function HomeSidebar() {
         </div>
       )}
 
-      {/* 热门帖子 */}
+      {/* ③ 全站荣誉：范围较大、全站性质的东西（独立框，目前为成就殿堂；条目由 SITE_FEATURES 数组扩展） */}
+      <div className={cardCls}>
+        <h3 className={titleCls}>🏛️ 全站荣誉</h3>
+        <div className="space-y-1.5">
+          {SITE_FEATURES.map(f => (
+            <Link key={f.path} to={f.path}
+              className="flex items-center gap-3 px-3 py-2.5 rounded-xl bg-gray-50 dark:bg-gray-900 hover:bg-gray-100 dark:hover:bg-gray-800 transition group">
+              <span className="w-9 h-9 shrink-0 rounded-lg bg-amber-50 dark:bg-amber-900/30 border border-amber-100 dark:border-amber-900 flex items-center justify-center text-lg">{f.emoji}</span>
+              <span className="flex-1 min-w-0">
+                <span className="block text-sm font-medium text-gray-900 dark:text-gray-100 group-hover:text-primary-600 transition">{f.title}</span>
+                <span className="block text-[11px] text-gray-400 truncate">{f.desc}</span>
+              </span>
+              <span className="text-gray-300 group-hover:text-primary-500 transition shrink-0">›</span>
+            </Link>
+          ))}
+        </div>
+      </div>
+
+      {/* ④ 推荐位：使用推荐卡的帖子（付费曝光位，不插队主页列表） */}
+      {featured.length > 0 && (
+        <div className={`${cardCls} border-amber-200 dark:border-amber-900`}>
+          <h3 className={`${titleCls} text-amber-600 dark:text-amber-400`}>🔥 推荐</h3>
+          <div className="space-y-1">
+            {featured.map((p, i) => (
+              <Link key={p.id} to={`/post/${p.id}`}
+                className="flex items-center gap-2 px-2 py-1.5 rounded-lg hover:bg-amber-50/60 dark:hover:bg-amber-900/20 transition">
+                <span className={`w-4 text-center text-[11px] font-semibold shrink-0 ${i < 3 ? 'text-amber-500' : 'text-gray-300'}`}>{i + 1}</span>
+                <span className="flex-1 min-w-0">
+                  <span className="block text-[13px] text-gray-700 dark:text-gray-200 truncate hover:text-amber-600">{p.title}</span>
+                  <span className="block text-[11px] text-gray-400 truncate">by {p.username}</span>
+                </span>
+              </Link>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* ⑤ 热门帖子 */}
       {hotPosts.length > 0 && (
         <div className={cardCls}>
           <h3 className={titleCls}><FontAwesomeIcon icon={faBolt} className="text-amber-500" />热门帖子</h3>

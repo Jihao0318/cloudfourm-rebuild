@@ -12,7 +12,7 @@ import type { PatrolStats } from '../types';
 import { formatDateTime } from '../utils/date';
 import EmptyState from '../components/EmptyState';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
-import { faFlag, faNewspaper, faEye } from '@fortawesome/free-solid-svg-icons';
+import { faFlag, faNewspaper, faEye, faRobot } from '@fortawesome/free-solid-svg-icons';
 import BackButton from '../components/BackButton';
 
 // 巡查预览的 markdown 渲染配置（与 PostDetail 一致：GFM/换行/富媒体/iframe 白名单）
@@ -55,7 +55,7 @@ function Pager({ page, total, pageSize = 10, onChange }: { page: number; total: 
   );
 }
 
-type Tab = 'overview' | 'reports' | 'posts' | 'appeals';
+type Tab = 'overview' | 'reports' | 'posts' | 'appeals' | 'ailogs';
 
 // ===== 概览 =====
 function OverviewTab({ go, stats }: { go: (t: Tab) => void; stats: PatrolStats | null }) {
@@ -355,10 +355,10 @@ function ReportsTab() {
   );
 }
 
-// ===== 帖子巡查（单帖预览 + 多人复核制：放行/违规双计数竞争，先到阈值生效；打回重新编辑；管理员一票否决） =====
+// ===== 帖子巡查（合并队列：待巡查在前、待复核接后，连续浏览；多人复核制 + 管理员一票否决） =====
 function PostsPatrol() {
-  const [queue, setQueue] = useState<'pending' | 'flagged'>('pending');
-  const [list, setList] = useState<any[]>([]);
+  const [pendingRows, setPendingRows] = useState<any[]>([]);
+  const [flaggedRows, setFlaggedRows] = useState<any[]>([]);
   const [index, setIndex] = useState(0);
   const [loading, setLoading] = useState(true);
   const [acting, setActing] = useState(false);
@@ -373,30 +373,42 @@ function PostsPatrol() {
   const load = async () => {
     setLoading(true);
     try {
-      const r = await moderationApi.reviewPosts(queue);
-      if (r.success) {
-        setList(r.data || []);
-        setIndex(0);
-        // 清理已不在当前列表中的跳过项（已处理/已受理的帖自动移除）
-        setSkippedIds(prev => {
-          if (prev.size === 0) return prev;
-          const present = new Set((r.data || []).map((p: any) => p.id));
-          const next = new Set([...prev].filter(id => present.has(id)));
-          return next.size === prev.size ? prev : next;
-        });
-        if ((r as any).violationLimit) setViolationLimit((r as any).violationLimit);
-        if ((r as any).passLimit) setPassLimit((r as any).passLimit);
-        if ((r as any).adminVeto) setAdminVeto(true);
-      }
-      else setMsg(r.error || '加载失败');
+      // 合并加载两个队列：待巡查在前、待复核接后，连续浏览（不再分 tab）
+      const [pr, fr] = await Promise.all([
+        moderationApi.reviewPosts('pending'),
+        moderationApi.reviewPosts('flagged'),
+      ]);
+      const pl = pr.success ? (pr.data || []) : [];
+      const fl = fr.success ? (fr.data || []) : [];
+      setPendingRows(pl);
+      setFlaggedRows(fl);
+      setIndex(0);
+      // 清理已不在当前列表中的跳过项（已处理/已受理的帖自动移除）
+      setSkippedIds(prev => {
+        if (prev.size === 0) return prev;
+        const present = new Set([...pl, ...fl].map((p: any) => p.id));
+        const next = new Set([...prev].filter(id => present.has(id)));
+        return next.size === prev.size ? prev : next;
+      });
+      if ((pr as any).passLimit) setPassLimit((pr as any).passLimit);
+      if ((pr as any).violationLimit) setViolationLimit((pr as any).violationLimit);
+      if ((pr as any).adminVeto) setAdminVeto(true);
+      if (!pr.success && !fr.success) setMsg(pr.error || fr.error || '加载失败');
     } catch (e: any) { setMsg(e.message); }
     setLoading(false);
   };
-  useEffect(() => { load(); }, [queue]);
+  useEffect(() => { load(); }, []);
 
-  // 排序：未跳过的在前，跳过的在后（处理完所有未跳过项后自然回到跳过的）
-  const ordered = [...list.filter(p => !skippedIds.has(p.id)), ...list.filter(p => skippedIds.has(p.id))];
+  // 合并浏览序：未跳过的在前（待巡查段 → 待复核段），跳过的排到整个队列末尾
+  const ordered = [
+    ...pendingRows.filter(p => !skippedIds.has(p.id)),
+    ...flaggedRows.filter(p => !skippedIds.has(p.id)),
+    ...pendingRows.filter(p => skippedIds.has(p.id)),
+    ...flaggedRows.filter(p => skippedIds.has(p.id)),
+  ];
   const current = ordered[index];
+  // 帖子所处队列：pending = 待巡查（3 按钮）；questionable/violation = 待复核（2 按钮）
+  const currentIsPending = current ? current.review_status === 'pending' : false;
 
   const act = async (action: string) => {
     if (!current || acting) return;
@@ -405,7 +417,7 @@ function PostsPatrol() {
       const r = await moderationApi.reviewPost(current.id, action);
       if (r.success) {
         setMsg(r.message || '已处理');
-        // 投过票后该帖对自己隐藏 → 跳到下一条（或刷新当前队列）
+        // 投过票后该帖对自己隐藏 → 跳到下一条（队列尾部则刷新）
         if (index + 1 < ordered.length) setIndex(index + 1);
         else load();
       } else setMsg(r.error || '操作失败');
@@ -423,24 +435,13 @@ function PostsPatrol() {
 
   return (
     <div className="space-y-3">
-      {/* 队列切换 */}
-      <div className="flex items-center gap-2">
-        <button onClick={() => setQueue('pending')}
-          className={`px-3 py-1.5 rounded-lg text-sm font-medium transition ${queue === 'pending' ? 'bg-primary-600 text-white' : 'bg-white border text-gray-600'}`}>
-          待巡查
-        </button>
-        <button onClick={() => setQueue('flagged')}
-          className={`px-3 py-1.5 rounded-lg text-sm font-medium transition ${queue === 'flagged' ? 'bg-amber-500 text-white' : 'bg-white border text-gray-600'}`}>
-          待复核
-        </button>
-        {msg && <span className="text-xs text-gray-500 truncate flex-1 text-right">{msg}</span>}
-      </div>
+      {msg && <div className="text-xs text-gray-500">{msg}</div>}
 
       {loading ? (
         <div className="text-center py-12 text-sm text-gray-400">加载中...</div>
       ) : !current ? (
-        <EmptyState icon={faNewspaper} title={queue === 'pending' ? '暂无待巡查帖子' : '暂无待复核帖子'}
-          description={queue === 'pending' ? '新发布的帖子会自动进入巡查队列' : '其他巡查员标记的帖子会出现在这里'} />
+        <EmptyState icon={faNewspaper} title="暂无待巡查 / 待复核帖子"
+          description="新发布的帖子会进入待巡查；被标记存疑或违规的帖子会进入待复核，按顺序连续浏览处理" />
       ) : (
         <>
           {/* 单帖预览卡：模拟正常帖子浏览样式（头像/用户名用灰色占位与匿名名，保护被审用户隐私） */}
@@ -452,20 +453,29 @@ function PostsPatrol() {
                 <div className="flex items-center gap-2 flex-wrap">
                   <span className="text-sm font-semibold text-gray-800 dark:text-gray-100">用户一</span>
                   <span className="text-[11px] bg-gray-100 dark:bg-gray-700 text-gray-500 dark:text-gray-400 px-2 py-0.5 rounded font-medium">{current.category_name || '未分类'}</span>
-                  {current.review_status !== 'pending' && (
+                  {currentIsPending ? (
+                    <>
+                      {current.ai_action === 'approved' && (
+                        <span className="text-[11px] bg-blue-50 text-blue-600 px-2 py-0.5 rounded font-medium">
+                          🤖 AI 判定无问题{current.ai_confidence != null ? `（${Math.round(current.ai_confidence * 100)}%）` : ''}
+                        </span>
+                      )}
+                      {(current.pass_count || 0) > 0 && (
+                        <span className="text-[11px] bg-green-50 text-green-600 px-2 py-0.5 rounded font-medium">
+                          ✅ 通过确认中（{current.pass_count}/{passLimit} 人）
+                        </span>
+                      )}
+                    </>
+                  ) : (
                     <span className={`text-[11px] px-2 py-0.5 rounded font-medium ${current.review_status === 'violation' ? 'bg-red-50 text-red-600' : 'bg-amber-50 text-amber-600'}`}>
-                      {current.review_status === 'violation' ? `违规复核中（违规 ${current.violation_count}/${violationLimit} 人）` : '存疑复核中'}
-                    </span>
-                  )}
-                  {queue === 'pending' && (current.pass_count || 0) > 0 && (
-                    <span className="text-[11px] bg-green-50 text-green-600 px-2 py-0.5 rounded font-medium">
-                      ✅ 通过确认中（{current.pass_count}/{passLimit} 人）
+                      {current.review_status === 'violation' ? `违规复核中（违规 ${current.violation_count}/${violationLimit} 人）` : 'AI 不确定 · 存疑复核中'}
                     </span>
                   )}
                   {skippedIds.has(current.id) && (
                     <span className="text-[11px] bg-orange-50 text-orange-500 px-2 py-0.5 rounded font-medium">⏭ 已跳过</span>
                   )}
                 </div>
+                {current.flagged_reason && <div className="text-[11px] text-gray-400 mt-0.5">标记原因：{current.flagged_reason}</div>}
                 <div className="text-xs text-gray-400 mt-0.5">{formatDateTime(current.created_at)}</div>
               </div>
             </div>
@@ -482,47 +492,41 @@ function PostsPatrol() {
                   ) : <p className="text-gray-400">（无内容）</p>}
               </div>
             </div>
-            {/* 标记信息（复核队列） */}
-            {queue === 'flagged' && (
-              <div className="px-4 py-2 border-t bg-amber-50/40 dark:bg-amber-950/20 text-xs text-gray-600 dark:text-gray-300">
-                ⚠️ 标记原因：{current.flagged_reason || '未填写'} · 违规 {current.violation_count || 0}/{violationLimit} 人 · 放行 {current.pass_count || 0}/{passLimit} 人
+
+            {/* 浏览进度 + 上/下一条（跨队列连续） */}
+            <div className="px-4 py-2 border-t flex items-center justify-between bg-gray-50/60 dark:bg-gray-800/40">
+              <button onClick={() => setIndex(Math.max(0, index - 1))} disabled={index <= 0}
+                className="px-3 py-1.5 border rounded-lg text-sm disabled:opacity-40">← 上一条</button>
+              <span className="text-xs text-gray-400">{index + 1} / {ordered.length}{skippedIds.size > 0 ? `（已跳过 ${skippedIds.size} 条）` : ''}</span>
+              <button onClick={() => setIndex(Math.min(ordered.length - 1, index + 1))} disabled={index >= ordered.length - 1}
+                className="px-3 py-1.5 border rounded-lg text-sm disabled:opacity-40">下一条 →</button>
+            </div>
+
+            {/* 动作按钮：待巡查 3 按钮 / 待复核 2 按钮（按帖子当前状态自动切换） */}
+            {currentIsPending ? (
+              <div className="px-4 py-3 border-t grid grid-cols-3 gap-2">
+                <button onClick={() => act('pass')} disabled={acting}
+                  className="py-2.5 rounded-xl bg-green-500 text-white text-sm font-medium hover:bg-green-600 disabled:opacity-50 transition">✅ 没问题</button>
+                <button onClick={() => act('question')} disabled={acting}
+                  className="py-2.5 rounded-xl bg-amber-500 text-white text-sm font-medium hover:bg-amber-600 disabled:opacity-50 transition">🤔 存疑</button>
+                <button onClick={() => act('violation')} disabled={acting}
+                  className="py-2.5 rounded-xl bg-red-500 text-white text-sm font-medium hover:bg-red-600 disabled:opacity-50 transition">🚫 有违规</button>
+              </div>
+            ) : (
+              <div className="px-4 py-3 border-t grid grid-cols-2 gap-2">
+                <button onClick={() => act('pass')} disabled={acting}
+                  className="py-2.5 rounded-xl bg-green-500 text-white text-sm font-medium hover:bg-green-600 disabled:opacity-50 transition">✅ 没问题（放行）</button>
+                <button onClick={() => act('confirm')} disabled={acting}
+                  className="py-2.5 rounded-xl bg-red-500 text-white text-sm font-medium hover:bg-red-600 disabled:opacity-50 transition">🚫 确认违规（{current.violation_count || 0}/{violationLimit}）</button>
               </div>
             )}
-
-            {/* 底部操作区（卡片内部最底部）：导航 + 判断按钮，看完帖子内容即达 */}
-            <div className="px-4 py-3 border-t bg-gray-50/60 dark:bg-gray-800/40 space-y-3">
-              <div className="flex items-center justify-between gap-2">
-                <button onClick={() => setIndex(Math.max(0, index - 1))} disabled={index === 0}
-                  className="px-3 py-1.5 border rounded-lg text-sm disabled:opacity-40">← 上一条</button>
-                <span className="text-xs text-gray-400">{index + 1} / {ordered.length}{skippedIds.size > 0 ? `（已跳过 ${skippedIds.size} 条）` : ''}</span>
-                <button onClick={() => setIndex(Math.min(ordered.length - 1, index + 1))} disabled={index >= ordered.length - 1}
-                  className="px-3 py-1.5 border rounded-lg text-sm disabled:opacity-40">下一条 →</button>
-              </div>
-
-              {/* 动作按钮 */}
-              {queue === 'pending' ? (
-                <div className="grid grid-cols-3 gap-2">
-                  <button onClick={() => act('pass')} disabled={acting}
-                    className="py-2.5 rounded-xl bg-green-500 text-white text-sm font-medium hover:bg-green-600 disabled:opacity-50 transition">✅ 没问题</button>
-                  <button onClick={() => act('question')} disabled={acting}
-                    className="py-2.5 rounded-xl bg-amber-500 text-white text-sm font-medium hover:bg-amber-600 disabled:opacity-50 transition">🤔 存疑</button>
-                  <button onClick={() => act('violation')} disabled={acting}
-                    className="py-2.5 rounded-xl bg-red-500 text-white text-sm font-medium hover:bg-red-600 disabled:opacity-50 transition">🚫 有违规</button>
-                </div>
-              ) : (
-                <div className="grid grid-cols-2 gap-2">
-                  <button onClick={() => act('pass')} disabled={acting}
-                    className="py-2.5 rounded-xl bg-green-500 text-white text-sm font-medium hover:bg-green-600 disabled:opacity-50 transition">✅ 没问题（放行）</button>
-                  <button onClick={() => act('confirm')} disabled={acting}
-                    className="py-2.5 rounded-xl bg-red-500 text-white text-sm font-medium hover:bg-red-600 disabled:opacity-50 transition">🚫 确认违规（{current.violation_count || 0}/{violationLimit}）</button>
-                </div>
-              )}
-              {/* 跳过：显眼虚线按钮，移到队列末尾（处理完其他后再回来） */}
+            {/* 跳过：显眼虚线按钮，移到队列末尾（处理完其他后再回来） */}
+            <div className="px-4 pb-4">
               <button onClick={skipCurrent}
                 className="w-full py-2 rounded-xl border-2 border-dashed border-gray-300 text-gray-500 text-sm font-medium hover:border-orange-400 hover:text-orange-500 hover:bg-orange-50 transition">
                 ⏭ 跳过这条（稍后处理，处理完其他后会自动回来）
               </button>
-              <p className="text-[11px] text-gray-400 text-center">
+              <p className="text-[11px] text-gray-400 text-center mt-2">
                 {adminVeto
                   ? '管理员一票否决可直接打回，一票通过可移出巡查'
                   : `「没问题」需 ${passLimit} 人放行；违规确认达到 ${violationLimit} 人打回重新编辑（先到阈值生效）`}
@@ -640,6 +644,64 @@ function AppealsReview() {
 }
 
 // ===== 巡查台主页面 =====
+// ===== AI 审核日志（aiReview.ts 消费端写入，仅保留最近 20 条）=====
+function AiLogsTab() {
+  const [logs, setLogs] = useState<any[] | null>(null);
+  const navigate = useNavigate();
+
+  useEffect(() => {
+    moderationApi.aiLogs().then(r => { if (r.success) setLogs(r.data || []); }).catch(() => {});
+  }, []);
+
+  const badge = (action: string) => {
+    switch (action) {
+      case 'approved': return { text: '通过', cls: 'bg-green-100 text-green-700' };
+      case 'uncertain': return { text: 'AI 不确定 → 待复核', cls: 'bg-amber-100 text-amber-700' };
+      case 'takedown': return { text: 'AI 下架', cls: 'bg-red-100 text-red-700' };
+      case 'failed': return { text: '审核失败', cls: 'bg-gray-100 text-gray-600' };
+      default: return { text: action, cls: 'bg-gray-100 text-gray-600' };
+    }
+  };
+  const statusText: Record<string, string> = {
+    pending: '待巡查', cleared: '已通过', questionable: '待复核',
+    violation: '违规待复核', rejected: '已打回',
+  };
+
+  if (logs === null) return <div className="text-center py-10 text-gray-400 text-sm">加载中...</div>;
+  if (logs.length === 0) return <EmptyState icon={faRobot} title="暂无 AI 审核记录" description="新帖子触发 AI 审核后会显示在这里（仅保留最近 20 条）" />;
+
+  return (
+    <div className="space-y-3">
+      {logs.map(l => {
+        const b = badge(l.action);
+        let reasons: string[] = [];
+        try { reasons = l.reasons ? JSON.parse(l.reasons) : []; } catch {}
+        return (
+          <div key={l.id} className="bg-white border rounded-xl p-4">
+            <div className="flex items-center justify-between mb-2">
+              <span className={`text-xs px-2 py-0.5 rounded font-medium ${b.cls}`}>{b.text}</span>
+              <span className="text-[11px] text-gray-400">{l.created_at}</span>
+            </div>
+            <button onClick={() => l.post_id && navigate(`/post/${l.post_id}`)}
+              className="text-sm font-medium text-gray-800 hover:text-primary-600 text-left block w-full truncate">
+              {l.post_title || `帖子 #${l.post_id ?? '?'}`}
+            </button>
+            <div className="mt-2 flex flex-wrap gap-x-3 gap-y-1 text-xs text-gray-500">
+              <span>作者：{l.author_name || (l.author_id ? `#${l.author_id}` : '匿名/已注销')}</span>
+              {l.confidence != null && <span>置信度：{Math.round(l.confidence * 100)}%</span>}
+              {l.verdict && <span>AI 判定：{l.verdict === 'pass' ? '无问题' : '检出问题'}</span>}
+              {reasons.length > 0 && <span>原因：{reasons.join('、')}</span>}
+              <span>当前状态：{l.post_deleted ? '已删除' : (statusText[l.current_status] || l.current_status || '不存在')}</span>
+              {l.summary && <span className="w-full text-gray-600">{l.summary}</span>}
+              {l.error && <span className="w-full text-red-500">失败原因：{l.error}</span>}
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
 export default function Moderator() {
   const { user, loading } = useAuth();
   const navigate = useNavigate();
@@ -672,6 +734,7 @@ export default function Moderator() {
     { id: 'overview', label: '巡查概览', icon: faEye },
     { id: 'reports', label: '举报审核', icon: faFlag },
     { id: 'posts', label: '帖子巡查', icon: faNewspaper },
+    { id: 'ailogs', label: 'AI 审核日志', icon: faRobot },
   ];
 
   // 已下架复审分区：达标巡查员 / 管理员可见可用
@@ -704,6 +767,7 @@ export default function Moderator() {
       {tab === 'reports' && <ReportsTab />}
       {tab === 'posts' && <PostsPatrol />}
       {tab === 'appeals' && <AppealsReview />}
+      {tab === 'ailogs' && <AiLogsTab />}
     </div>
   );
 }

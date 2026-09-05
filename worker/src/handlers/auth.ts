@@ -173,11 +173,13 @@ auth.post('/register', async (c) => {
   const buf = new Uint8Array(6);
   crypto.getRandomValues(buf);
   const emailCode = Array.from(buf).map((b) => b % 10).join('');
-  await createVerification(c.env.DB, user.id, 'email_verify', emailCode, 60);
+  await createVerification(c.env.DB, user.id, 'email_verify', emailCode, 30);
+  const regMail = verificationMailBody(emailCode, 30);
   const mailRes = await sendMail(c, {
     to: user.email,
     subject: '【CloudForum】邮箱验证',
-    text: `你的验证码是：${emailCode}\n60 分钟内有效，请勿泄露给他人。如果不是你本人注册，请忽略本邮件。`,
+    text: regMail.text,
+    html: regMail.html,
     fromName: 'CloudForum',
   });
   if (!mailRes.ok) {
@@ -207,6 +209,30 @@ auth.post('/register', async (c) => {
     message: '注册成功',
   });
 });
+
+// 验证码邮件正文（text + html 双版本）：html 用大字号验证码 + 显式段落换行，
+// 避免纯文本邮件被客户端吞掉换行导致「验证码60分钟」粘连误读
+function verificationMailBody(code: string, minutes: number): { text: string; html: string } {
+  return {
+    text: `你的验证码是：${code}\n请在 ${minutes} 分钟内完成验证，请勿泄露给他人。如果不是你本人操作，请忽略本邮件。`,
+    html: `<div style="font-family:system-ui,-apple-system,sans-serif;max-width:480px;margin:0 auto;padding:24px;color:#111;">
+  <h2 style="margin:0 0 16px;font-size:18px;">CloudForum 邮箱验证</h2>
+  <p style="margin:0 0 12px;">你的验证码是：</p>
+  <p style="font-size:28px;font-weight:bold;letter-spacing:6px;margin:0 0 16px;">${code}</p>
+  <p style="margin:0 0 8px;">请在 <strong>${minutes} 分钟内</strong>完成验证，请勿泄露给他人。</p>
+  <p style="margin:0;color:#999;font-size:12px;">如果不是你本人操作，请忽略本邮件。</p>
+</div>`,
+  };
+}
+
+// 邮箱脱敏：本地部分保留前 2 后 2（过短只保留前 1），域名完整——可辨认又不易被猜
+function maskEmail(email: string): string {
+  const [local, domain] = email.split('@');
+  if (!domain) return email;
+  const keep = local.length <= 4 ? 1 : 2;
+  const masked = local.length <= keep * 2 ? local.slice(0, 1) + '***' : local.slice(0, keep) + '***' + local.slice(-keep);
+  return `${masked}@${domain}`;
+}
 
 // 登录失败计数：fail_count >= 10 锁 30 分钟，>= 5 锁 15 分钟；锁定时清零，到期后重新计数
 // 锁定时长加入随机抖动（±5 分钟），避免攻击者按固定节奏循环锁号（DoS 缓解）
@@ -275,7 +301,8 @@ auth.post('/login', async (c) => {
     .prepare("SELECT value FROM settings WHERE key IN ('email_verification_required', 'require_email_verify') LIMIT 1")
     .first<{ value: string }>();
   if (verifyCfg && (verifyCfg.value === '1' || verifyCfg.value === 'true') && !row.email_verified) {
-    return c.json({ success: false, error: '邮箱未验证，请先在登录前完成邮箱验证' }, 403);
+    // 未验证账号引导走免登录验证页（/verify-email → verify-guest/resend-guest，发码到注册邮箱）
+    return c.json({ success: false, error: '邮箱未验证，请先完成邮箱验证' }, 403);
   }
 
   // 登录成功：清空该用户与 0 桶的失败计数
@@ -506,6 +533,74 @@ auth.post('/email/verify-register', requireAuth, async (c) => {
   return c.json({ success: true, message: '邮箱验证成功' });
 });
 
+// 登录前邮箱验证（免登录）：require_email_verify 开启时登录被 403 拦截，
+// 而旧验证端点全部要求登录态——形成「未验证 → 无法登录 → 无法验证」死循环。
+// 此端点按「用户名或邮箱」定位用户 + 验证码完成验证，与忘记密码的免登录模式一致。
+// 文案策略（用户要求明确提示，不做防枚举静默）：账号不存在 → 「该邮箱未注册」；已验证 → 幂等成功。
+auth.post('/email/verify-guest', async (c) => {
+  const { account, code } = await c.req.json().catch(() => ({}));
+  const normalized = typeof account === 'string' ? account.trim().toLowerCase() : '';
+  if (!normalized || !code) return c.json({ success: false, error: '请输入用户名/邮箱和验证码' }, 400);
+
+  const row = await c.env.DB
+    .prepare('SELECT id, email_verified FROM users WHERE (email = ? OR username = ?) AND deleted_at IS NULL')
+    .bind(normalized, account.trim())
+    .first<{ id: number; email_verified: number }>();
+  if (!row) return c.json({ success: false, error: '该邮箱未注册：若你记错了绑定邮箱，可改用注册时的用户名查询' }, 400);
+  if (row.email_verified) return c.json({ success: true, message: '邮箱已验证，请直接登录' });
+
+  const ok = await verifyCode(c.env.DB, row.id, 'email_verify', String(code).trim());
+  if (!ok) return c.json({ success: false, error: '验证码错误或已过期' }, 400);
+
+  await verifyUserEmail(c.env.DB, row.id);
+  await c.env.DB
+    .prepare("INSERT INTO security_logs (user_id, action, detail) VALUES (?, 'email_verify', '邮箱验证成功（登录前验证）')")
+    .bind(row.id)
+    .run()
+    .catch(() => {});
+
+  return c.json({ success: true, message: '邮箱验证成功，请登录' });
+});
+
+// 登录前重发验证码（免登录）：按「用户名或邮箱」定位用户，发码到绑定的真实邮箱，
+// 并返回脱敏后的绑定邮箱（用户名定位时帮用户回忆绑定的是哪个邮箱；中间打码防猜测）。
+// 文案策略（用户要求明确提示）：不存在 → 「该邮箱未注册」；已验证 → 提示直接登录。
+auth.post('/email/resend-guest', async (c) => {
+  const { account } = await c.req.json().catch(() => ({}));
+  const normalized = typeof account === 'string' ? account.trim().toLowerCase() : '';
+  if (!normalized) return c.json({ success: false, error: '请输入用户名或邮箱' }, 400);
+
+  const row = await c.env.DB
+    .prepare('SELECT id, username, email, email_verified FROM users WHERE (email = ? OR username = ?) AND deleted_at IS NULL')
+    .bind(normalized, account.trim())
+    .first<{ id: number; username: string; email: string; email_verified: number }>();
+  if (!row) return c.json({ success: false, error: '该邮箱未注册：若你记错了绑定邮箱，可改用注册时的用户名查询' }, 400);
+  if (row.email_verified) {
+    return c.json({ success: false, error: '该邮箱已验证，请直接登录' });
+  }
+
+  const buf = new Uint8Array(6);
+  crypto.getRandomValues(buf);
+  const code = Array.from(buf).map((b) => b % 10).join('');
+  await createVerification(c.env.DB, row.id, 'email_verify', code, 30);
+  const guestMail = verificationMailBody(code, 30);
+  const mailRes = await sendMail(c, {
+    to: row.email,
+    subject: '【CloudForum】邮箱验证',
+    text: guestMail.text,
+    html: guestMail.html,
+  });
+  if (!mailRes.ok) {
+    console.error('[email/resend-guest] 邮件发送失败:', mailRes.error);
+    return c.json({ success: false, error: '验证码发送失败，请稍后重试' }, 502);
+  }
+  return c.json({
+    success: true,
+    message: '验证码已发送，请查收邮件',
+    data: { masked_email: maskEmail(row.email) },
+  });
+});
+
 // 重发邮箱验证码：改邮箱流程（pending data 存了新邮箱）→ 发到新邮箱；注册验证（data 空）→ 发到当前邮箱
 auth.post('/email/resend', requireAuth, async (c) => {
   const user: JWTPayload | undefined = c.get('user');
@@ -521,13 +616,16 @@ auth.post('/email/resend', requireAuth, async (c) => {
 
   const code = generateSixDigitCode();
   // data 必须透传：改邮箱流程重发后 verify 仍要能拿到新邮箱
-  await createVerification(c.env.DB, user.userId, 'email_verify', code, pending?.data ? 10 : 60, pending?.data || '');
+  const resendMinutes = pending?.data ? 10 : 30;
+  await createVerification(c.env.DB, user.userId, 'email_verify', code, resendMinutes, pending?.data || '');
 
   const to = pending?.data || fullUser.email;
+  const resendMail = verificationMailBody(code, resendMinutes);
   const mailRes = await sendMail(c, {
     to,
     subject: pending?.data ? '【CloudForum】修改邮箱验证码' : '【CloudForum】邮箱验证',
-    text: `你的验证码是：${code}\n${pending?.data ? '10' : '60'} 分钟内有效，请勿泄露给他人。`,
+    text: resendMail.text,
+    html: resendMail.html,
     fromName: 'CloudForum',
   });
   if (!mailRes.ok) {

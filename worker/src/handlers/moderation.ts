@@ -77,6 +77,10 @@ moderation.get('/review-posts', requireAdmin, async (c) => {
            p.review_status, p.flagged_by, p.flagged_reason, p.violation_count,
            (SELECT COUNT(*) FROM post_review_actions pra WHERE pra.post_id = p.id AND pra.round = p.review_round AND pra.action = 'pass') AS pass_count,
            (SELECT COUNT(*) FROM post_review_actions pra WHERE pra.post_id = p.id AND pra.round = p.review_round AND pra.action IN ('violation','confirm')) AS violation_count,
+           -- AI 判定参考（该帖最新一条 AI 审核日志）：approved = AI 判定无问题，供巡查员参考，不改变人工流程
+           (SELECT action FROM ai_review_logs WHERE post_id = p.id ORDER BY id DESC LIMIT 1) AS ai_action,
+           (SELECT verdict FROM ai_review_logs WHERE post_id = p.id ORDER BY id DESC LIMIT 1) AS ai_verdict,
+           (SELECT confidence FROM ai_review_logs WHERE post_id = p.id ORDER BY id DESC LIMIT 1) AS ai_confidence,
            c.name AS category_name, c.allow_thanks,
            CASE WHEN p.is_anonymous = 1 THEN '匿名同学' ELSE u.username END AS username,
            CASE WHEN p.is_anonymous = 1 THEN '' ELSE u.avatar_url END AS avatar_url
@@ -265,6 +269,21 @@ async function rejectPost(db: D1Database, postId: number, authorId: number, reas
 }
 
 // ─── 巡查员战绩统计（巡查等级 + 累计计数 + 成就解锁状态） ───
+// AI 审核日志：最近 20 条（aiReview.ts 消费端写入，表自动修剪；带出作者与帖子当前状态）
+moderation.get('/ai-logs', requireAdmin, async (c) => {
+  const rows = await c.env.DB.prepare(`
+    SELECT l.id, l.post_id, l.post_title, l.author_id, l.verdict, l.confidence,
+           l.reasons, l.summary, l.action, l.error, l.created_at,
+           u.username AS author_name,
+           p.review_status AS current_status, p.deleted_at AS post_deleted
+    FROM ai_review_logs l
+    LEFT JOIN users u ON u.id = l.author_id
+    LEFT JOIN posts p ON p.id = l.post_id
+    ORDER BY l.id DESC
+  `).all();
+  return c.json({ success: true, data: rows.results || [] });
+});
+
 moderation.get('/stats', requireAdmin, async (c) => {
   const user: JWTPayload | undefined = c.get('user');
   if (!user) return c.json({ success: false, error: '请先登录' }, 401);

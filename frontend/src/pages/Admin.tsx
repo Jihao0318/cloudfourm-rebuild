@@ -467,13 +467,18 @@ function UsersPanel() {
         <div className="overflow-x-auto">
           <table className="w-full text-sm min-w-[760px]">
             <thead className="bg-gray-50">
-              <tr><th className={thCls}>用户</th><th className={thCls}>邮箱</th><th className={thCls}>角色</th><th className={thCls}>状态</th><th className={`${thCls} text-right`}>操作</th></tr>
+              <tr><th className={thCls}>用户</th><th className={thCls}>邮箱</th><th className={thCls}>邮箱验证</th><th className={thCls}>角色</th><th className={thCls}>状态</th><th className={`${thCls} text-right`}>操作</th></tr>
             </thead>
             <tbody className="divide-y">
               {list.map((u: any) => (
                 <tr key={u.id} className="hover:bg-gray-50">
                   <td className={tdCls}><Link to={`/user/${u.id}`} className="text-primary-600 hover:underline">{u.username}</Link></td>
                   <td className={`${tdCls} text-gray-500`}>{u.email}</td>
+                  <td className={tdCls}>
+                    {u.email_verified
+                      ? <span className="text-[11px] bg-green-50 text-green-600 px-2 py-0.5 rounded font-medium">✓ 已验证</span>
+                      : <span className="text-[11px] bg-amber-50 text-amber-600 px-2 py-0.5 rounded font-medium">⚠ 未验证</span>}
+                  </td>
                   <td className={tdCls}>
                     <select value={u.role} onChange={e => handleRole(u.id, e.target.value)} className="px-2 py-1 border rounded-lg text-xs">
                       <option value="user">用户</option><option value="moderator">巡查员</option><option value="admin">管理员</option>

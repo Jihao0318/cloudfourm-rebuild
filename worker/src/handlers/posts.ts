@@ -490,6 +490,15 @@ posts.put('/:id', requireAuth, async (c) => {
       .prepare("UPDATE posts SET review_status = 'pending', review_round = review_round + 1, rejected_at = NULL, flagged_by = NULL, flagged_reason = NULL, violation_count = 0 WHERE id = ?")
       .bind(id)
       .run();
+    // 重新提交也走 AI 预筛（与首次发帖同链路）：该帖曾被人工确认违规，重提内容仍需复审；
+    // 投递失败仅记日志（fail-open），开关判定在消费侧
+    if (c.env.QUEUE) {
+      try {
+        await c.env.QUEUE.send({ postId: id });
+      } catch (e) {
+        console.error('ai_review.reenqueue_failed', e);
+      }
+    }
     return c.json({ success: true, message: '已重新提交，帖子进入待巡查队列' });
   }
   return c.json({ success: true, message: '编辑成功' });

@@ -3,7 +3,7 @@ import { createPortal } from 'react-dom';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import { useToast } from '../contexts/ToastContext';
-import { shop as shopApi, items as itemsApi, posts as postsApi } from '../services/api';
+import { shop as shopApi, items as itemsApi, decorations as decorationsApi, posts as postsApi } from '../services/api';
 import { POST_BG_OPTIONS, postBgClass } from '../utils/postBg';
 import ItemDetailModal from '../components/ItemDetailModal';
 
@@ -214,17 +214,20 @@ export default function Warehouse() {
       }
 
       const typeMap: Record<string, string> = {
-        item_announce: 'announce',
-        item_bump: 'bump',
-        item_highlight: 'highlight',
-        item_rainbow_title: 'rainbow-title',
+        post_decoration: 'decorations/apply',
+        item_announce: 'items/use/announce',
+        item_bump: 'items/use/bump',
+        item_highlight: 'items/use/highlight',
+        item_rainbow_title: 'items/use/rainbow-title',
       };
       const endpoint = typeMap[item.type];
       if (!endpoint) { toast('未知道具类型', 'error'); return; }
 
-      const json = item.type === 'item_announce'
-        ? await itemsApi.use('announce', undefined, { content: (useModal?.value || useModal.item.name) as string })
-        : await itemsApi.use(endpoint, parseInt(postId || '0'));
+      const json = item.type === 'post_decoration'
+        ? await decorationsApi.apply(parseInt(postId || '0'), item.id)
+        : item.type === 'item_announce'
+          ? await itemsApi.use('announce', undefined, { content: (useModal?.value || useModal.item.name) as string })
+          : await itemsApi.use(endpoint.replace('items/use/', ''), parseInt(postId || '0'));
       if (json.success) { toast(json.message || '使用成功', 'success'); notifyCoinsChanged(); setUseModal(null); loadItems(); }
       else toast(json.error || '使用失败', 'error');
     } catch (err: any) {
@@ -242,6 +245,14 @@ export default function Warehouse() {
       map.get(key)!.push(item);
     }
     return Array.from(map.entries()).map(([key, items]) => ({ key, items }));
+  };
+
+  const removeDecoration = async (item: MyItem) => {
+    if (!item.applied_to) return;
+    try {
+      const res = await decorationsApi.remove(item.applied_to);
+      if (res.success) { toast('装饰已移除', 'success'); loadItems(); }
+    } catch (err: any) { toast(err.message, 'error'); }
   };
 
   const handleRecycle = async () => {

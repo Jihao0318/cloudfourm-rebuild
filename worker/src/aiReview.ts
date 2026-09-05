@@ -2,7 +2,9 @@
 // AI 异步审核（Cloudflare Queues 消费端）
 // 链路：发帖成功 → QUEUE.send({postId})（posts.ts producer）→ 本文件消费：
 //       读 settings 开关 → 读帖 → 调 judge（JUDGE_API_URL/JUDGE_API_KEY secrets）→
-//       flag 置 questionable（WHERE 守卫）→ 通知作者。
+//       三档置信度分流（阈值 ai_review_confidence_threshold，默认 70）：
+//       不确定 → questionable 进「待复核」；确定 + pass → cleared 直接通过；
+//       确定 + flag → 软删下架（可申诉恢复）→ 通知作者。
 // 设计要点（照搬新项目已验证裁定）：
 // - 开关关闭 → 跳过且不 throw（否则熔断写回后，队列里残留的旧消息会无限重试空转）
 // - flag 置状态用 WHERE 守卫（仅 pending/cleared 可置 questionable），
@@ -58,15 +60,46 @@ async function callJudge(post: Pick<ReviewPostRow, 'title' | 'content'>, env: En
     signal: AbortSignal.timeout(timeoutMs),
   };
   // 双通道：配置了 JUDGE service binding 时走绑定（service binding 要求绝对 URL，host 不解析）；
-  // 未绑定时走公网 fetch（JUDGE_API_URL 是自定义域名，不受 workers.dev 1042 子请求限制）
-  const res = env.JUDGE
-    ? await env.JUDGE.fetch(new Request(env.JUDGE_API_URL, init))
-    : await fetch(env.JUDGE_API_URL, init);
-  if (!res.ok) {
-    throw new Error(`judge 返回非 2xx：HTTP ${res.status}`);
+  // 未绑定时走公网 fetch（JUDGE_API_URL 是自定义域名，不受 workers.dev 1042 子请求限制）。
+  // binding 通道返回 5xx 或抛错（本地 dev 无目标服务/线上偶发）时回退公网重试一次；4xx 直接按失败处理
+  const classifyFetchErr = (err: any): Error => {
+    if (err?.name === 'AbortError' || err?.name === 'TimeoutError') return new Error(`请求超时（${timeoutMs}ms）`);
+    return new Error(`网络请求失败：${err?.message || '未知错误'}`);
+  };
+  let res: Response;
+  try {
+    if (env.JUDGE) {
+      try {
+        const bindingRes = await env.JUDGE.fetch(new Request(env.JUDGE_API_URL, init));
+        if (bindingRes.status < 500) {
+          res = bindingRes;
+        } else {
+          console.error('ai_review.judge_binding_5xx，回退公网:', bindingRes.status);
+          res = await fetch(env.JUDGE_API_URL, init);
+        }
+      } catch (bindErr) {
+        console.error('ai_review.judge_binding_error，回退公网:', bindErr);
+        throw classifyFetchErr(bindErr);
+      }
+    } else {
+      res = await fetch(env.JUDGE_API_URL, init);
+    }
+  } catch (fetchErr: any) {
+    // fetch 层异常已结构化（超时/网络）则原样抛出，否则归一为网络失败
+    throw fetchErr?.message?.startsWith('请求超时') || fetchErr?.message?.startsWith('网络请求失败') ? fetchErr : classifyFetchErr(fetchErr);
   }
-  // 非 JSON 响应：res.json() 抛 SyntaxError 自然上抛触发重试，无需单独 catch
-  const data: any = await res.json();
+  if (!res.ok) {
+    const bodyText = await res.text().catch(() => '');
+    throw new Error(`judge 返回 HTTP ${res.status}${bodyText ? `：${bodyText.slice(0, 200)}` : ''}`);
+  }
+  // 非 JSON 响应：显式归类为「响应不是有效 JSON」而非裸 SyntaxError
+  const rawText = await res.text().catch(() => '');
+  let data: any;
+  try {
+    data = rawText ? JSON.parse(rawText) : null;
+  } catch {
+    throw new Error(`响应不是有效 JSON：${rawText.slice(0, 120)}`);
+  }
   if (data?.status === 'error') {
     throw new Error(`judge 返回 error 状态：${data?.error || '未知错误'}`);
   }
@@ -105,6 +138,40 @@ async function recordAiReviewFailure(env: Env, postId: number, cause: unknown): 
   }
 }
 
+// 写 AI 审核日志（巡查台「AI 审核日志」栏目数据源），同批次修剪只保留最近 20 条；
+// 日志写失败只记 console，不影响审核主流程
+async function writeAiReviewLog(
+  db: D1Database,
+  entry: {
+    post: Pick<ReviewPostRow, 'id' | 'user_id' | 'title'>;
+    verdict?: Omit<JudgeVerdict, 'confidence'> & { confidence?: number | null };
+    action: 'approved' | 'uncertain' | 'takedown' | 'failed';
+    error?: string;
+  }
+): Promise<void> {
+  try {
+    await db.batch([
+      db.prepare(
+        'INSERT INTO ai_review_logs (post_id, post_title, author_id, verdict, confidence, reasons, summary, action, error) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)'
+      ).bind(
+        entry.post.id,
+        (entry.post.title || '').slice(0, 200),
+        entry.post.user_id,
+        entry.verdict?.verdict ?? null,
+        entry.verdict?.confidence ?? null,
+        entry.verdict?.reasons ? JSON.stringify(entry.verdict.reasons) : null,
+        entry.verdict?.summary ?? null,
+        entry.action,
+        entry.error ?? null,
+      ),
+      // 只保留最近 20 条：每次插入后同批次修剪，表恒 ≤20 行
+      db.prepare('DELETE FROM ai_review_logs WHERE id NOT IN (SELECT id FROM ai_review_logs ORDER BY id DESC LIMIT 20)'),
+    ]);
+  } catch (e) {
+    console.error('ai_review.log_failed:', e);
+  }
+}
+
 // 消费单条审核消息（queue handler 逐条调用）
 export async function consumeAiReviewMessage(postId: number, env: Env): Promise<void> {
   const db = env.DB;
@@ -125,33 +192,65 @@ export async function consumeAiReviewMessage(postId: number, env: Env): Promise<
   if (post.review_status !== 'pending' && post.review_status !== 'cleared') return;
 
   // 4. judge 超时（默认 5s，范围 100ms-60s）
-  const timeoutMs = await numSetting(db, 'ai_review_timeout_ms', 5000, 100, 60000);
+  const timeoutMs = await numSetting(db, 'ai_review_timeout_ms', 15000, 100, 60000);
 
   // 5. 调 judge：任何 throw → 外层 catch 记熔断计数后 re-throw（走队列重试，max_retries=3）
   try {
     const verdict = await callJudge(post, env, timeoutMs);
 
-    // 6. flag 处置：WHERE 守卫只允许 pending/cleared → questionable；
+    // 6. 置信度三档分流（阈值 settings ai_review_confidence_threshold，0-100 整数，默认 70）：
+    //    - 不确定（confidence 缺失或低于阈值，无论 verdict）→ questionable 进「待复核」，人工裁决
+    //    - 确定 + pass → cleared 直接通过（免人工巡查）
+    //    - 确定 + flag（AI 确定违规）→ AI 下架：软删 + flagged_by/flagged_reason 留痕 + 通知作者；
+    //      作者可走「已下架复审」申诉，申诉通过后 appeals.ts 自动恢复并回 pending 重新巡查
+    //    WHERE 守卫只允许 pending/cleared 的帖子被 AI 处置（questionable/violation/rejected 属人工领域，AI 不碰）；
     //    meta.changes = 0 说明并发下已被巡查处理/重复消息 → 不通知不抛错
-    if (verdict.verdict === 'flag') {
+    const thresholdPct = await numSetting(db, 'ai_review_confidence_threshold', 70, 50, 100);
+    // 置信度归一化：llama 偶发输出 0（未给出有效判断）——0 与缺失同等视为「AI 未能判断」，
+    // 入库记 NULL，展示层不再出现误导性的「置信度 0%」
+    const confidence = verdict.confidence != null && verdict.confidence > 0 ? verdict.confidence : null;
+    const normVerdict = { ...verdict, confidence };
+    const certain = confidence != null && confidence >= thresholdPct / 100;
+    if (!certain) {
+      // 不确定 → 待复核（flagged_by/flagged_reason 留痕供复核员参考）
+      const confText = confidence != null ? Math.round(confidence * 100) + '%' : '';
       const upd = await db
-        .prepare("UPDATE posts SET review_status = 'questionable' WHERE id = ? AND review_status IN ('pending','cleared')")
-        .bind(postId)
+        .prepare("UPDATE posts SET review_status = 'questionable', flagged_by = 'ai', flagged_reason = ? WHERE id = ? AND review_status IN ('pending','cleared')")
+        .bind(`AI 置信度不足${confText ? `（${confText}）` : ''}，无法确定是否合规`, postId)
         .run();
-      if ((upd.meta.changes || 0) > 0) {
-        // 通知作者（系统通知：actorId=null 不触发「不给自己发通知」守卫）；user_id 为空的老数据跳过
-        if (post.user_id != null) {
-          const shortTitle = (post.title || '').slice(0, 30);
-          const content = `🚫 你的帖子「${shortTitle}」被 AI 审核标记为疑似违规，已进入巡查复核。${verdict.summary ? '原因：' + verdict.summary : ''}`;
-          try {
-            await createNotification(db, post.user_id, null, 'system', postId, undefined, content);
-          } catch (e) {
-            // 通知失败仅记日志不 throw：重试时帖子已 questionable 被上方守卫跳过，
-            // 若这里抛错只会造成无意义的重试空转，通知本身已永久丢失
-            console.error(`ai_review.notify_failed post=${postId}:`, e);
-          }
+      if ((upd.meta.changes || 0) > 0 && post.user_id != null) {
+        const shortTitle = (post.title || '').slice(0, 30);
+        const content = `🤔 你的帖子「${shortTitle}」AI 审核无法确定是否合规${confText ? `（置信度 ${confText}）` : ''}，已转入人工复核`;
+        try {
+          // type=post_takedown：前端通知组件对此类型自动渲染「去申诉」按钮（跳 /appeal/:postId）
+          await createNotification(db, post.user_id, null, 'post_takedown', postId, undefined, content);
+        } catch (e) {
+          // 通知失败仅记日志不 throw：重试时帖子状态已被守卫跳过，抛错只会造成无意义重试空转
+          console.error(`ai_review.notify_failed post=${postId}:`, e);
         }
       }
+      await writeAiReviewLog(db, { post, verdict: normVerdict, action: 'uncertain' });
+    } else if (verdict.verdict === 'pass') {
+      // 确定 + pass → **不改状态**：帖子保持 pending 照常进「待巡查」队列走人工投票；
+      // AI 判定只作为参考（巡查卡片展示「AI 判定无问题 + 置信度」，数据来自 ai_review_logs）
+      await writeAiReviewLog(db, { post, verdict: normVerdict, action: 'approved' });
+    } else {
+      // 确定 + flag → AI 下架（软删；30 天保留期内可申诉，申诉通过自动恢复）
+      const reason = (verdict.summary || (verdict.reasons || []).join('；') || '违规内容').slice(0, 200);
+      const upd = await db
+        .prepare("UPDATE posts SET deleted_at = datetime('now'), flagged_by = 'ai', flagged_reason = ? WHERE id = ? AND review_status IN ('pending','cleared')")
+        .bind(`AI 判定违规：${reason}`, postId)
+        .run();
+      if ((upd.meta.changes || 0) > 0 && post.user_id != null) {
+        const shortTitle = (post.title || '').slice(0, 30);
+        const content = `🚫 你的帖子「${shortTitle}」因违规被 AI 下架（原因：${reason}）。如有异议，可提交申诉进入复审`;
+        try {
+          await createNotification(db, post.user_id, null, 'system', postId, undefined, content);
+        } catch (e) {
+          console.error(`ai_review.notify_failed post=${postId}:`, e);
+        }
+      }
+      await writeAiReviewLog(db, { post, verdict: normVerdict, action: 'takedown' });
     }
 
     // 7. 任一成功即清零失败计数（熔断「连续失败」语义）
@@ -159,6 +258,11 @@ export async function consumeAiReviewMessage(postId: number, env: Env): Promise<
   } catch (e) {
     // 「先记后抛」：先记熔断计数（达阈值自动关开关），再原样抛出让本批消息走队列重试
     await recordAiReviewFailure(env, postId, e);
+    await writeAiReviewLog(db, {
+      post,
+      action: 'failed',
+      error: e instanceof Error ? e.message.slice(0, 300) : String(e).slice(0, 300),
+    });
     throw e;
   }
 }

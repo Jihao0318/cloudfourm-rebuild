@@ -9,13 +9,18 @@ export default function Login() {
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
+  // 邮箱未验证被拦（403）：展示「去验证邮箱」入口；?verified=1 表示刚完成验证回跳
+  const [needVerify, setNeedVerify] = useState(false);
+  const [verifiedToast, setVerifiedToast] = useState(false);
   const { login } = useAuth();
   const { toast } = useToast();
   const navigate = useNavigate();
   const location = useLocation();
+  const searchParams = new URLSearchParams(location.search);
+  const isVerifiedReturn = searchParams.get('verified') === '1';
   // 回跳路径：优先 state（页面内守卫跳转），其次 query（会话过期整页跳转带 ?from=）
   const from = (location.state as { from?: string })?.from
-    || new URLSearchParams(location.search).get('from')
+    || searchParams.get('from')
     || '/';
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -29,6 +34,13 @@ export default function Login() {
         toast('登录成功', 'success');
         navigate(from, { replace: true });
       } else {
+        if ((result.error || '').includes('邮箱未验证')) {
+          // 未验证账号：自动跳转邮箱验证页（带账号预填，验证通过后回本页登录）
+          toast(result.error || '请先完成邮箱验证', 'info');
+          navigate(`/verify-email?account=${encodeURIComponent(loginField.trim())}`);
+          setLoading(false);
+          return;
+        }
         setError(result.error || '登录失败');
       }
     } catch (err: any) {
@@ -43,10 +55,23 @@ export default function Login() {
       <div className="bg-white rounded-xl border p-8">
         <h1 className="text-2xl font-bold text-center mb-6">登录</h1>
 
+        {isVerifiedReturn && (
+          <div className="bg-green-50 text-green-700 px-4 py-2 rounded-lg mb-4 text-sm">
+            邮箱验证成功，请使用账号密码登录
+          </div>
+        )}
         {error && (
           <div className="bg-red-50 text-red-600 px-4 py-2 rounded-lg mb-4 text-sm">
             {error}
           </div>
+        )}
+        {needVerify && (
+          <Link
+            to={`/verify-email?account=${encodeURIComponent(loginField.trim())}`}
+            className="block w-full text-center bg-amber-500 text-white py-2.5 rounded-lg font-medium hover:bg-amber-600 transition mb-4"
+          >
+            去验证邮箱 →
+          </Link>
         )}
 
         <form onSubmit={handleSubmit} className="space-y-4">

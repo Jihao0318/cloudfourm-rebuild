@@ -65,7 +65,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         setUser(res.data.user);
         return { success: true };
       }
-      return { success: false, error: res.error };
+      // 透传 403 邮箱绑定/验证响应的 data（bind_token、has_email、masked_email），供登录页跳转绑定流程
+      return { success: false, error: res.error, data: res.data };
     } catch (err: any) {
       return { success: false, error: err.message || '登录失败' };
     }
@@ -80,7 +81,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         setUser(res.data.user);
         return { success: true };
       }
-      return { success: false, error: res.error };
+      // 透传 403 邮箱绑定/验证响应的 data（bind_token、has_email、masked_email），供登录页跳转绑定流程
+      return { success: false, error: res.error, data: res.data };
     } catch (err: any) {
       return { success: false, error: err.message || '注册失败' };
     }
@@ -97,6 +99,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const refreshUser = async () => {
     await fetchUser();
   };
+
 
   return (
     <AuthContext.Provider value={{ user, loading, login, register, logout, refreshUser }}>
