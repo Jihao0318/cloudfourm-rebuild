@@ -380,62 +380,38 @@ function generateSixDigitCode(): string {
   return Array.from(buf).map((b) => b % 10).join('');
 }
 
-// 第一步：验证旧密码，向注册邮箱发送验证码（10 分钟有效）
-auth.post('/password/request', requireAuth, async (c) => {
+// 修改密码（登录态一步直改）：验证当前密码后直接设置新密码，不发验证码。
+// 成功后踢掉全部会话（token_version+1 + 删 refresh_tokens），需重新登录
+auth.put('/password', requireAuth, async (c) => {
   const user: JWTPayload | undefined = c.get('user');
   if (!user) return c.json({ success: false, error: '请先登录' }, 401);
-  const { old_password } = await c.req.json().catch(() => ({}));
+  const { current_password, new_password } = await c.req.json().catch(() => ({}));
 
   const fullUser = await getUserById(c.env.DB, user.userId);
   if (!fullUser) return c.json({ success: false, error: '用户不存在' }, 404);
 
-  const pwResult = await verifyPassword(old_password || '', fullUser.password_hash);
-  if (!pwResult.valid) return c.json({ success: false, error: '旧密码错误' }, 400);
-
-  const code = generateSixDigitCode();
-  await createVerification(c.env.DB, user.userId, 'password_change', code, 10);
-
-  const mailRes = await sendMail(c, {
-    to: fullUser.email,
-    subject: '【CloudForum】修改密码验证码',
-    text: `你的验证码是：${code}\n10 分钟内有效，请勿泄露给他人。如果不是你本人操作，请立即修改密码。`,
-    fromName: 'CloudForum',
-  });
-  if (!mailRes.ok) {
-    console.error('[password/request] 邮件发送失败:', mailRes.error);
-  }
-
-  return c.json({ success: true, message: '验证码已发送至注册邮箱' });
-});
-
-// 第二步：校验验证码并修改密码（成功后踢掉全部会话）
-auth.post('/password/verify', requireAuth, async (c) => {
-  const user: JWTPayload | undefined = c.get('user');
-  if (!user) return c.json({ success: false, error: '请先登录' }, 401);
-  const { code, new_password } = await c.req.json().catch(() => ({}));
+  const pwResult = await verifyPassword(current_password || '', fullUser.password_hash);
+  if (!pwResult.valid) return c.json({ success: false, error: '当前密码错误' }, 400);
 
   const pwCheck = validatePassword(new_password || '');
   if (!pwCheck.valid) return c.json({ success: false, error: pwCheck.error }, 400);
-
-  const ok = await verifyCode(c.env.DB, user.userId, 'password_change', (code || '').trim());
-  if (!ok) return c.json({ success: false, error: '验证码错误或已过期' }, 400);
 
   const newHash = await hashPassword(new_password);
   await c.env.DB.batch([
     c.env.DB.prepare("UPDATE users SET password_hash = ?, token_version = token_version + 1, updated_at = datetime('now') WHERE id = ?").bind(newHash, user.userId),
     c.env.DB.prepare('DELETE FROM refresh_tokens WHERE user_id = ?').bind(user.userId),
-    c.env.DB.prepare("INSERT INTO security_logs (user_id, action, detail) VALUES (?, 'change_password', '两步验证修改密码')").bind(user.userId),
+    c.env.DB.prepare("INSERT INTO security_logs (user_id, action, detail) VALUES (?, 'change_password', '修改密码（当前密码验证）')").bind(user.userId),
   ]);
 
-  const fullUser = await getUserById(c.env.DB, user.userId);
+  // 修改提醒发到注册邮箱（安全通知，非验证；失败仅日志）
   const mailRes = await sendMail(c, {
-    to: fullUser?.email || '',
+    to: fullUser.email,
     subject: '【CloudForum】密码修改提醒',
     text: '您的账号密码已被修改。如果不是您本人操作，请立即通过忘记密码功能重置密码。',
     fromName: 'CloudForum',
   });
   if (!mailRes.ok) {
-    console.error('[password/verify] 提醒邮件发送失败:', mailRes.error);
+    console.error('[password] 提醒邮件发送失败:', mailRes.error);
   }
 
   return c.json({ success: true, message: '密码已修改，请重新登录' });
@@ -743,37 +719,6 @@ auth.post('/email/resend', requireAuth, async (c) => {
 
   return c.json({ success: true, message: '验证码已发送' });
 });
-
-// 重发改密码验证码（发到当前注册邮箱）
-auth.post('/password/resend', requireAuth, async (c) => {
-  const user: JWTPayload | undefined = c.get('user');
-  if (!user) return c.json({ success: false, error: '请先登录' }, 401);
-
-  const fullUser = await getUserById(c.env.DB, user.userId);
-  if (!fullUser) return c.json({ success: false, error: '用户不存在' }, 404);
-
-  const pending = await c.env.DB
-    .prepare("SELECT id FROM verifications WHERE user_id = ? AND type = 'password_change' AND used = 0 AND expires_at > datetime('now') ORDER BY id DESC LIMIT 1")
-    .bind(user.userId)
-    .first<{ id: number }>();
-  if (!pending) return c.json({ success: false, error: '请先发起修改密码操作' }, 400);
-
-  const code = generateSixDigitCode();
-  await createVerification(c.env.DB, user.userId, 'password_change', code, 10);
-
-  const mailRes = await sendMail(c, {
-    to: fullUser.email,
-    subject: '【CloudForum】修改密码验证码',
-    text: `你的验证码是：${code}\n10 分钟内有效，请勿泄露给他人。`,
-    fromName: 'CloudForum',
-  });
-  if (!mailRes.ok) {
-    console.error('[password/resend] 邮件发送失败:', mailRes.error);
-  }
-
-  return c.json({ success: true, message: '验证码已发送' });
-});
-
 
 // 修改用户名
 auth.put('/username', requireAuth, async (c) => {

@@ -175,18 +175,11 @@ export const auth = {
       body: JSON.stringify({ code }),
     }),
 
-  // 修改密码两步验证：第一步提交旧密码，服务端向注册邮箱发验证码
-  passwordRequest: (old_password: string) =>
-    request<null>('/auth/password/request', {
-      method: 'POST',
-      body: JSON.stringify({ old_password }),
-    }),
-
-  // 修改密码两步验证：第二步提交验证码+新密码（成功后服务端踢掉全部会话，需重新登录）
-  passwordVerify: (code: string, new_password: string) =>
-    request<null>('/auth/password/verify', {
-      method: 'POST',
-      body: JSON.stringify({ code, new_password }),
+  // 修改密码（登录态一步直改）：验证当前密码后直接设置新密码（成功后踢掉全部会话，需重新登录）
+  changePassword: (current_password: string, new_password: string) =>
+    request<null>('/auth/password', {
+      method: 'PUT',
+      body: JSON.stringify({ current_password, new_password }),
     }),
 
   // 注册邮箱验证：提交注册时收到的验证码
@@ -230,9 +223,6 @@ export const auth = {
   resendEmailCode: () =>
     request<null>('/auth/email/resend', { method: 'POST' }),
 
-  // 重发改密码验证码（发到当前注册邮箱）
-  resendPasswordCode: () =>
-    request<null>('/auth/password/resend', { method: 'POST' }),
 
   changeUsername: (username: string) =>
     request<null>('/auth/username', {

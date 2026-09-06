@@ -47,13 +47,11 @@ export default function Profile() {
   const [newUsername, setNewUsername] = useState('');
   const [oldPw, setOldPw] = useState('');
   const [newPw, setNewPw] = useState('');
+  const [confirmPw, setConfirmPw] = useState('');
   // 修改密码两步表单（独立状态）
-  const [pwStep, setPwStep] = useState<1 | 2>(1);
-  const [pwCode, setPwCode] = useState('');
   const [pwLoading, setPwLoading] = useState(false);
   const [pwError, setPwError] = useState('');
   // 重发验证码倒计时（60s 防连点/防轰炸）
-  const [pwResendCd, setPwResendCd] = useState(0);
   // 注册邮箱验证徽章（未验证时显示）
   const [emailVerifyOpen, setEmailVerifyOpen] = useState(false);
   const [emailVerifyCode, setEmailVerifyCode] = useState('');
@@ -100,13 +98,6 @@ export default function Profile() {
       loadUserPosts(profileId, 1);
     }
   }, [profileId]);
-
-  // 重发验证码倒计时
-  useEffect(() => {
-    if (pwResendCd <= 0) return;
-    const t = setTimeout(() => setPwResendCd(c => c - 1), 1000);
-    return () => clearTimeout(t);
-  }, [pwResendCd]);
 
   // 成就墙 — 仅自己的主页（成就接口只支持当前登录用户）
   // 抽成可复用函数：挂载时拉一次 + 切到「成长」tab 时重新拉取（用户可能在其他页面解锁了新成就）
@@ -270,55 +261,21 @@ export default function Profile() {
     }
   };
 
-  // ===== 修改密码两步验证 =====
-  const handlePwRequest = async () => {
+  // ===== 修改密码（一步直改：验证当前密码后直接设置新密码，后端踢全部会话需重新登录） =====
+  const handleChangePassword = async () => {
     setPwError('');
     if (!oldPw) { setPwError('请输入当前密码'); return; }
+    if (!newPw) { setPwError('请输入新密码'); return; }
+    if (confirmPw !== newPw) { setPwError('两次输入的新密码不一致'); return; }
     setPwLoading(true);
     try {
-      const r = await authApi.passwordRequest(oldPw);
+      const r = await authApi.changePassword(oldPw, newPw);
       if (r.success) {
-        setPwStep(2);
-        toast('验证码已发送至注册邮箱', 'success');
-      } else {
-        setPwError(r.error || '发送失败');
-      }
-    } catch (err: any) {
-      setPwError(err.message);
-    }
-    setPwLoading(false);
-  };
-
-  const handlePwVerify = async () => {
-    setPwError('');
-    if (!pwCode || !newPw) { setPwError('请输入验证码和新密码'); return; }
-    setPwLoading(true);
-    try {
-      const r = await authApi.passwordVerify(pwCode, newPw);
-      if (r.success) {
-        toast('密码已修改，请重新登录');
+        toast('密码已修改，请重新登录', 'success');
         // 后端已踢掉全部会话，下次请求会 401 自动跳转登录页
-        setPwStep(1); setOldPw(''); setNewPw(''); setPwCode('');
+        navigate('/login', { replace: true });
       } else {
-        setPwError(r.error || '验证失败');
-      }
-    } catch (err: any) {
-      setPwError(err.message);
-    }
-    setPwLoading(false);
-  };
-
-  // 重发改密码验证码（发到当前注册邮箱）
-  const handlePwResend = async () => {
-    setPwError('');
-    setPwLoading(true);
-    try {
-      const r = await authApi.resendPasswordCode();
-      if (r.success) {
-        toast('验证码已重新发送');
-        setPwResendCd(60);
-      } else {
-        setPwError(r.error || '重发失败');
+        setPwError(r.error || '修改失败');
       }
     } catch (err: any) {
       setPwError(err.message);
@@ -744,38 +701,16 @@ export default function Profile() {
             {/* 左列：修改密码 */}
             <div className="pb-5 md:pb-0 md:border-r md:pr-6 border-gray-100">
               <h3 className="text-sm font-semibold text-gray-800 mb-3">修改密码</h3>
-              {pwStep === 1 ? (
-                <div className="space-y-2">
-                  <input type="password" value={oldPw} onChange={e => setOldPw(e.target.value)} placeholder="当前密码" className="w-full px-3 py-2 border rounded-xl outline-none focus:border-primary-500 text-sm" />
-                  <button onClick={handlePwRequest} disabled={pwLoading}
-                    className="px-4 py-2 bg-primary-600 text-white rounded-xl text-sm font-medium hover:bg-primary-700 transition disabled:opacity-50">
-                    {pwLoading ? '发送中...' : '发送验证码'}
-                  </button>
-                </div>
-              ) : (
-                <div className="space-y-2">
-                  <p className="text-xs text-primary-600">验证码已发送至注册邮箱，10 分钟内有效</p>
-                  <div className="flex items-center gap-2">
-                    <button onClick={handlePwResend} disabled={pwResendCd > 0 || pwLoading}
-                      className="text-xs text-primary-600 hover:underline disabled:text-gray-300 disabled:no-underline transition">
-                      没有收到邮件？{pwResendCd > 0 ? `重新发送（${pwResendCd}s）` : '重新发送'}
-                    </button>
-                  </div>
-                  <input type="text" value={pwCode} onChange={e => setPwCode(e.target.value)} placeholder="6 位验证码" maxLength={6}
-                    className="w-full px-3 py-2 border rounded-xl outline-none focus:border-primary-500 text-sm" />
-                  <input type="password" value={newPw} onChange={e => setNewPw(e.target.value)} placeholder="新密码"
-                    className="w-full px-3 py-2 border rounded-xl outline-none focus:border-primary-500 text-sm" />
-                  <p className="text-xs text-gray-400">至少 6 位，需包含大写字母和数字</p>
-                  <div className="flex gap-2">
-                    <button onClick={handlePwVerify} disabled={pwLoading}
-                      className="px-4 py-2 bg-primary-600 text-white rounded-xl text-sm font-medium hover:bg-primary-700 transition disabled:opacity-50">
-                      {pwLoading ? '提交中...' : '确认修改'}
-                    </button>
-                    <button onClick={() => { setPwStep(1); setPwError(''); }} className="text-xs text-gray-400 hover:text-gray-600 transition">← 返回上一步</button>
-                  </div>
-                </div>
-              )}
-              {pwError && <p className="text-xs text-red-500 mt-2">{pwError}</p>}
+              <div className="space-y-2">
+              <input type="password" value={oldPw} onChange={e => setOldPw(e.target.value)} placeholder="当前密码" className="w-full px-3 py-2 border rounded-xl outline-none focus:border-primary-500 text-sm" />
+              <input type="password" value={newPw} onChange={e => setNewPw(e.target.value)} placeholder="新密码" className="w-full px-3 py-2 border rounded-xl outline-none focus:border-primary-500 text-sm" />
+              <input type="password" value={confirmPw} onChange={e => setConfirmPw(e.target.value)} placeholder="确认新密码" className="w-full px-3 py-2 border rounded-xl outline-none focus:border-primary-500 text-sm" />
+              <p className="text-xs text-gray-400">至少 6 位，需包含大写字母和数字。修改成功后需重新登录。</p>
+              <button onClick={handleChangePassword} disabled={pwLoading}
+                className="px-4 py-2 bg-primary-600 text-white rounded-xl text-sm font-medium hover:bg-primary-700 transition disabled:opacity-50">
+                {pwLoading ? '提交中...' : '确认修改'}
+              </button>
+            </div>
             </div>
             {/* 右列 */}
             <div className="space-y-5">

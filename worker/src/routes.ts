@@ -81,9 +81,8 @@ export function setupRoutes(app: Hono<{ Bindings: Env }>) {
   // 责令换邮箱流程（change_token 半登录态）：发码严限流防邮件轰炸；confirm 限流防验证码爆破
   app.use('/api/auth/email/change-guest/request', rateLimit({ windowSeconds: 300, maxRequests: 3, keyPrefix: 'change-request', failClosed: true }));
   app.use('/api/auth/email/change-guest/confirm', rateLimit({ windowSeconds: 300, maxRequests: 10, keyPrefix: 'change-confirm', failClosed: true }));
-  app.use('/api/auth/password/request', rateLimit({ windowSeconds: 300, maxRequests: 5, keyPrefix: 'password-request', failClosed: true }));
-  app.use('/api/auth/password/verify', rateLimit({ windowSeconds: 300, maxRequests: 5, keyPrefix: 'password-verify', failClosed: true }));
-  app.use('/api/auth/password/resend', rateLimit({ windowSeconds: 300, maxRequests: 3, keyPrefix: 'password-resend', failClosed: true }));
+  // 修改密码（当前密码一步直改）：限流防当前密码爆破
+  app.use('/api/auth/password', rateLimit({ windowSeconds: 600, maxRequests: 5, keyPrefix: 'password-change', failClosed: true }));
   // 忘记密码：5 分钟 3 次（防验证码爆破/邮件轰炸）
   app.use('/api/auth/forgot', rateLimit({ windowSeconds: 300, maxRequests: 3, keyPrefix: 'forgot', failClosed: true }));
   app.use('/api/auth/reset', rateLimit({ windowSeconds: 300, maxRequests: 5, keyPrefix: 'reset', failClosed: true }));
