@@ -1,53 +1,11 @@
 import type { ApiResponse, LoginResponse, Post, Comment, Category, User, PublicUser, TaskItem, AchievementInfo, AchievementHall, PatrolStats, DecorationData } from '../types';
 
 // 开发环境通过 Vite 代理到 localhost:8787
-// 生产环境：API 源列表（逗号分隔，按优先级排序）——首个为优选 IP 域名，
-// 后续为回退源（默认 Cloudflare CDN 域名 / workers.dev）。优选被阻断（Failed to fetch）时
-// 自动切换到下一个源重试，并在 30s 冷却后重新探测优选是否恢复。
-const API_BASES: string[] = import.meta.env.DEV
-  ? ['/api']
-  : (import.meta.env.VITE_API_BASES || import.meta.env.VITE_API_BASE || '')
-      .split(',').map((s: string) => s.trim().replace(/\/+$/, '') + '/api').filter((s: string) => s !== '/api');
-  // 规范化：去尾斜杠 + 统一补 /api 后缀（path 本身不含 /api；探测同样基于该后缀）
-
-// 当前生效的源索引（探测/回退共用来回切换）
-let baseIdx = 0;
-// 探测冷却：全部源都不可达时进入冷却，期间直接用最后一个源发请求（错误可读），冷却后重新探测
-let cooldownUntil = 0;
-
-// 探测单个源：GET /api/health，5s 超时
-async function probeBase(base: string): Promise<boolean> {
-  try {
-    const ctrl = new AbortController();
-    const timer = setTimeout(() => ctrl.abort(), 5000);
-    const res = await fetch(`${base}/api/health`, { signal: ctrl.signal });
-    clearTimeout(timer);
-    return res.ok;
-  } catch {
-    return false;
-  }
-}
-
-// 确定当前可用源：首个请求前从 baseIdx 起依次探测，锁定第一个健康源；
-// 冷却期内跳过探测直接用当前源。探测失败锁定最后源并进入冷却。
-async function ensureBase(): Promise<void> {
-  if (API_BASES.length <= 1) return;                      // 同源/单源模式无需探测
-  if (Date.now() < cooldownUntil) return;                 // 冷却期内：保持当前源
-  for (let i = baseIdx; i < API_BASES.length; i++) {
-    if (await probeBase(API_BASES[i])) {
-      baseIdx = i;
-      return;
-    }
-  }
-  baseIdx = API_BASES.length - 1;                         // 全部不可达：锁定最后源兜底
-  cooldownUntil = Date.now() + 30_000;                    // 30s 后重新探测（优选恢复自动切回）
-}
-
-// 网络层失败判定：fetch 抛出的 TypeError（Failed to fetch）属于阻断，
-// 业务错误（4xx/5xx 有响应）不属于——能收到响应说明线路是通的
-function isNetworkFailure(err: unknown): boolean {
-  return err instanceof TypeError;
-}
+// 生产环境直接请求 Worker：VITE_API_BASE 为后端地址（当前 = https://apiforum.jgp.dpdns.org，CF 优选路由）
+// 多源回退架构已移至 multi-source-fallback 分支备用
+const API_BASE = import.meta.env.DEV
+  ? '/api'
+  : (import.meta.env.VITE_API_BASE || '') + '/api';
 
 let authToken: string | null = localStorage.getItem('token');
 let refreshToken: string | null = localStorage.getItem('refresh_token');
@@ -79,24 +37,11 @@ async function refreshAccessToken(): Promise<boolean> {
   const rt = getRefreshToken();
   if (!rt) return false;
   try {
-    await ensureBase();
-    let res: Response;
-    try {
-      res = await fetch(`${API_BASES[Math.min(baseIdx, API_BASES.length - 1)]}/auth/refresh`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ refresh_token: rt }),
-      });
-    } catch (err: unknown) {
-      // 刷新请求同样遭遇阻断（Failed to fetch）：切下一个源重试一次
-      if (!isNetworkFailure(err) || baseIdx >= API_BASES.length - 1) throw err;
-      baseIdx += 1;
-      res = await fetch(`${API_BASES[baseIdx]}/auth/refresh`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ refresh_token: rt }),
-      });
-    }
+    const res = await fetch(`${API_BASE}/auth/refresh`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ refresh_token: rt }),
+    });
     const data = await res.json();
     if (res.ok && data.success && data.data?.token) {
       setToken(data.data.token);
@@ -127,24 +72,10 @@ async function request<T>(
     headers['Content-Type'] = 'application/json';
   }
 
-  await ensureBase();
-
-  let res: Response;
-  try {
-    res = await fetch(`${API_BASES[Math.min(baseIdx, API_BASES.length - 1)]}${path}`, {
-      ...options,
-      headers,
-    });
-  } catch (err: unknown) {
-    // 网络层失败（Failed to fetch，优选 IP 被阻断的典型表现）：
-    // 切换到下一个源重试本请求一次；已是最后一个源则原样抛出
-    if (!isNetworkFailure(err) || baseIdx >= API_BASES.length - 1) throw err;
-    baseIdx += 1;
-    res = await fetch(`${API_BASES[baseIdx]}${path}`, {
-      ...options,
-      headers,
-    });
-  }
+  const res = await fetch(`${API_BASE}${path}`, {
+    ...options,
+    headers,
+  });
 
   // 401 优先于 content-type 检查：服务端 401 可能返回非 JSON body（网关/Worker 错误页），
   // 但会话过期语义不变——刷新/清 token/触发全局登出流程必须照常执行
