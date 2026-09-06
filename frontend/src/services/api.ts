@@ -114,10 +114,11 @@ async function request<T>(
   const data = await res.json();
 
   // 非 2xx 统一抛错：优先取服务端 error 文案，缺失时回退 HTTP 状态码；
-  // 同时把完整响应体挂到 err.data（登录被责令/被拦等引导流程需要 body 里的凭证字段）
+  // err.data 挂响应体的业务数据字段（data），与成功路径 res.data 的取值层级一致
+  // （登录被责令/被拦等引导流程需要 body.data 里的凭证字段）
   if (!res.ok) {
     const err = new Error(data.error || `HTTP ${res.status}`) as Error & { data?: unknown };
-    err.data = data;
+    err.data = data.data;
     throw err;
   }
 

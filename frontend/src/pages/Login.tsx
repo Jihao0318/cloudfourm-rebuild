@@ -85,6 +85,15 @@ export default function Login() {
             去验证邮箱 →
           </Link>
         )}
+        {needChange && (
+          <Link
+            to="/verify-email"
+            state={{ change_token: needChange.change_token, reason: needChange.reason }}
+            className="block w-full text-center bg-orange-500 text-white py-2.5 rounded-lg font-medium hover:bg-orange-600 transition mb-4"
+          >
+            去更换邮箱 →
+          </Link>
+        )}
 
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
