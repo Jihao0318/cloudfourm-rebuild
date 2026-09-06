@@ -291,12 +291,12 @@ export default function NotificationBell({ userId }: NotificationBellProps) {
                                     </button>
                                   </>
                                 )}
-                                {/* 责令更换邮箱：登录态下直接前往个人资料页完成更换（改邮箱成功即自动解除责令） */}
+                                {/* 责令更换邮箱：登录态下前往专门的更换邮箱页（改邮箱成功即自动解除责令） */}
                                 {n.type === 'email_change_ordered' && (
                                   <>
-                                    <p className="text-xs text-gray-500 dark:text-gray-400">请在个人资料页将邮箱更换为新邮箱，完成后责令自动解除</p>
+                                    <p className="text-xs text-gray-500 dark:text-gray-400">请前往更换邮箱页将邮箱更换为新邮箱，完成后责令自动解除</p>
                                     <button
-                                      onClick={(e) => { e.stopPropagation(); setOpen(false); navigate('/profile'); }}
+                                      onClick={(e) => { e.stopPropagation(); setOpen(false); navigate('/change-email'); }}
                                       className="text-xs font-medium text-orange-600 dark:text-orange-400 hover:underline">
                                       📧 去更换邮箱 →
                                     </button>

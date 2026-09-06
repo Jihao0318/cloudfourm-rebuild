@@ -11,6 +11,8 @@ export default function Login() {
   const [loading, setLoading] = useState(false);
   // 邮箱未验证被拦（403）：展示「去验证邮箱」入口；?verified=1 表示刚完成验证回跳
   const [needVerify, setNeedVerify] = useState(false);
+  // 责令更换邮箱：登录被拦时的凭证与原因（展示「去更换邮箱」按钮）
+  const [needChange, setNeedChange] = useState<{ change_token: string; reason: string } | null>(null);
   const [verifiedToast, setVerifiedToast] = useState(false);
   const { login } = useAuth();
   const { toast } = useToast();
@@ -35,11 +37,12 @@ export default function Login() {
         navigate(from, { replace: true });
       } else {
         if (result.data?.need_email_change) {
-          // 责令更换邮箱：自动跳转换邮箱页（凭证走 state，不进 URL）
-          toast(result.error || '请先完成邮箱更换', 'info');
-          navigate('/verify-email', {
-            state: { change_token: result.data.change_token, reason: result.data.reason },
+          // 责令更换邮箱：展示提示与「去更换邮箱」按钮（凭证走 state，不进 URL），由用户点击跳转
+          setNeedChange({
+            change_token: result.data.change_token || '',
+            reason: result.data.reason || '',
           });
+          setError(result.error || '请先完成邮箱更换');
           setLoading(false);
           return;
         }

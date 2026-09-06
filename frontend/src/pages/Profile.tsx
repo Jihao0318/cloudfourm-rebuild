@@ -47,20 +47,12 @@ export default function Profile() {
   const [newUsername, setNewUsername] = useState('');
   const [oldPw, setOldPw] = useState('');
   const [newPw, setNewPw] = useState('');
-  const [newEmail, setNewEmail] = useState('');
-  const [emailPw, setEmailPw] = useState('');
-  // 修改邮箱两步表单（独立状态）
-  const [emailStep, setEmailStep] = useState<1 | 2>(1);
-  const [emailCode, setEmailCode] = useState('');
-  const [emailLoading, setEmailLoading] = useState(false);
-  const [emailError, setEmailError] = useState('');
   // 修改密码两步表单（独立状态）
   const [pwStep, setPwStep] = useState<1 | 2>(1);
   const [pwCode, setPwCode] = useState('');
   const [pwLoading, setPwLoading] = useState(false);
   const [pwError, setPwError] = useState('');
   // 重发验证码倒计时（60s 防连点/防轰炸）
-  const [emailResendCd, setEmailResendCd] = useState(0);
   const [pwResendCd, setPwResendCd] = useState(0);
   // 注册邮箱验证徽章（未验证时显示）
   const [emailVerifyOpen, setEmailVerifyOpen] = useState(false);
@@ -110,11 +102,6 @@ export default function Profile() {
   }, [profileId]);
 
   // 重发验证码倒计时
-  useEffect(() => {
-    if (emailResendCd <= 0) return;
-    const t = setTimeout(() => setEmailResendCd(c => c - 1), 1000);
-    return () => clearTimeout(t);
-  }, [emailResendCd]);
   useEffect(() => {
     if (pwResendCd <= 0) return;
     const t = setTimeout(() => setPwResendCd(c => c - 1), 1000);
@@ -281,62 +268,6 @@ export default function Profile() {
         toast('复制失败，请手动复制', 'error');
       }
     }
-  };
-
-  // ===== 修改邮箱两步验证 =====
-  const handleEmailRequest = async () => {
-    setEmailError('');
-    if (!newEmail || !emailPw) { setEmailError('请填写新邮箱和当前密码'); return; }
-    setEmailLoading(true);
-    try {
-      const r = await authApi.emailRequest(newEmail, emailPw);
-      if (r.success) {
-        setEmailStep(2);
-        toast(`验证码已发送至新邮箱 ${newEmail}`, 'success');
-      } else {
-        setEmailError(r.error || '发送失败');
-      }
-    } catch (err: any) {
-      setEmailError(err.message);
-    }
-    setEmailLoading(false);
-  };
-
-  const handleEmailVerify = async () => {
-    setEmailError('');
-    if (!emailCode) { setEmailError('请输入验证码'); return; }
-    setEmailLoading(true);
-    try {
-      const r = await authApi.emailVerify(emailCode);
-      if (r.success) {
-        toast('邮箱已修改，请重新登录');
-        // 后端已踢掉全部会话，下次请求会 401 自动跳转登录页
-        setEmailStep(1); setNewEmail(''); setEmailPw(''); setEmailCode('');
-      } else {
-        setEmailError(r.error || '验证失败');
-      }
-    } catch (err: any) {
-      setEmailError(err.message);
-    }
-    setEmailLoading(false);
-  };
-
-  // 重发改邮箱验证码（后端按 pending data 发到新邮箱）
-  const handleEmailResend = async () => {
-    setEmailError('');
-    setEmailLoading(true);
-    try {
-      const r = await authApi.resendEmailCode();
-      if (r.success) {
-        toast('验证码已重新发送');
-        setEmailResendCd(60);
-      } else {
-        setEmailError(r.error || '重发失败');
-      }
-    } catch (err: any) {
-      setEmailError(err.message);
-    }
-    setEmailLoading(false);
   };
 
   // ===== 修改密码两步验证 =====
@@ -791,163 +722,128 @@ export default function Profile() {
           )}
           <div>
             <label className="block text-xs font-medium text-gray-500 mb-1.5">邮箱</label>
-            <p className="text-sm text-gray-700 mb-2">{currentUser?.email}</p>
-            {emailStep === 1 ? (
-              <div className="flex gap-2 items-end">
-                <div className="flex-1 space-y-2">
-                  <input type="email" value={newEmail} onChange={e => setNewEmail(e.target.value)} placeholder="新邮箱" className="w-full px-3 py-2 border rounded-xl outline-none focus:border-primary-500 text-sm" />
-                  <input type="password" value={emailPw} onChange={e => setEmailPw(e.target.value)} placeholder="输入密码确认" className="w-full px-3 py-2 border rounded-xl outline-none focus:border-primary-500 text-sm" />
-                </div>
-                <button onClick={handleEmailRequest} disabled={emailLoading}
-                  className="px-4 py-2 bg-primary-600 text-white rounded-xl text-sm font-medium hover:bg-primary-700 transition disabled:opacity-50">
-                  {emailLoading ? '发送中...' : '发送验证码'}
-                </button>
-              </div>
-            ) : (
-              <div className="space-y-2">
-                <p className="text-xs text-primary-600">验证码已发送至新邮箱 {newEmail}，10 分钟内有效</p>
-                <div className="flex items-center gap-2">
-                  <button onClick={handleEmailResend} disabled={emailResendCd > 0 || emailLoading}
-                    className="text-xs text-primary-600 hover:underline disabled:text-gray-300 disabled:no-underline transition">
-                    没有收到邮件？{emailResendCd > 0 ? `重新发送（${emailResendCd}s）` : '重新发送'}
-                  </button>
-                </div>
-                <div className="flex gap-2 items-end">
-                  <input type="text" value={emailCode} onChange={e => setEmailCode(e.target.value)} placeholder="6 位验证码" maxLength={6}
-                    className="flex-1 px-3 py-2 border rounded-xl outline-none focus:border-primary-500 text-sm" />
-                  <button onClick={handleEmailVerify} disabled={emailLoading}
-                    className="px-4 py-2 bg-primary-600 text-white rounded-xl text-sm font-medium hover:bg-primary-700 transition disabled:opacity-50">
-                    {emailLoading ? '提交中...' : '确认修改'}
-                  </button>
-                </div>
-                <button onClick={() => { setEmailStep(1); setEmailError(''); }} className="text-xs text-gray-400 hover:text-gray-600 transition">← 返回上一步</button>
-              </div>
-            )}
-            {emailError && <p className="text-xs text-red-500 mt-2">{emailError}</p>}
+            <div className="flex items-center justify-between flex-wrap gap-2">
+              <p className="text-sm text-gray-700">{currentUser?.email}</p>
+              <button
+                onClick={() => navigate('/change-email')}
+                className="px-4 py-2 bg-primary-600 text-white rounded-xl text-sm font-medium hover:bg-primary-700 transition">
+                更换邮箱
+              </button>
+            </div>
           </div>
         </div>
       )}
 
       {/* 安全设置面板（settings Tab 内第二块） */}
       {tab === 'settings' && isOwnProfile && (
-        <div className="bg-white rounded-2xl border p-6 space-y-6">
-          <div className="flex items-center justify-between">
+        <div className="bg-white rounded-2xl border p-6">
+          <div className="flex items-center justify-between mb-4">
             <h2 className="font-bold text-gray-900">安全设置</h2>
           </div>
-          <div className="pb-5 border-b">
-            <h3 className="text-sm font-semibold text-gray-800 mb-3">修改密码</h3>
-            {pwStep === 1 ? (
-              <div className="space-y-2">
-                <input type="password" value={oldPw} onChange={e => setOldPw(e.target.value)} placeholder="当前密码" className="w-full px-3 py-2 border rounded-xl outline-none focus:border-primary-500 text-sm" />
-                <button onClick={handlePwRequest} disabled={pwLoading}
-                  className="px-4 py-2 bg-primary-600 text-white rounded-xl text-sm font-medium hover:bg-primary-700 transition disabled:opacity-50">
-                  {pwLoading ? '发送中...' : '发送验证码'}
-                </button>
-              </div>
-            ) : (
-              <div className="space-y-2">
-                <p className="text-xs text-primary-600">验证码已发送至注册邮箱，10 分钟内有效</p>
-                <div className="flex items-center gap-2">
-                  <button onClick={handlePwResend} disabled={pwResendCd > 0 || pwLoading}
-                    className="text-xs text-primary-600 hover:underline disabled:text-gray-300 disabled:no-underline transition">
-                    没有收到邮件？{pwResendCd > 0 ? `重新发送（${pwResendCd}s）` : '重新发送'}
-                  </button>
-                </div>
-                <input type="text" value={pwCode} onChange={e => setPwCode(e.target.value)} placeholder="6 位验证码" maxLength={6}
-                  className="w-full px-3 py-2 border rounded-xl outline-none focus:border-primary-500 text-sm" />
-                <input type="password" value={newPw} onChange={e => setNewPw(e.target.value)} placeholder="新密码"
-                  className="w-full px-3 py-2 border rounded-xl outline-none focus:border-primary-500 text-sm" />
-                <p className="text-xs text-gray-400">至少 6 位，需包含大写字母和数字</p>
-                <div className="flex gap-2">
-                  <button onClick={handlePwVerify} disabled={pwLoading}
+          <div className="grid md:grid-cols-2 gap-6 items-start">
+            {/* 左列：修改密码 */}
+            <div className="pb-5 md:pb-0 md:border-r md:pr-6 border-gray-100">
+              <h3 className="text-sm font-semibold text-gray-800 mb-3">修改密码</h3>
+              {pwStep === 1 ? (
+                <div className="space-y-2">
+                  <input type="password" value={oldPw} onChange={e => setOldPw(e.target.value)} placeholder="当前密码" className="w-full px-3 py-2 border rounded-xl outline-none focus:border-primary-500 text-sm" />
+                  <button onClick={handlePwRequest} disabled={pwLoading}
                     className="px-4 py-2 bg-primary-600 text-white rounded-xl text-sm font-medium hover:bg-primary-700 transition disabled:opacity-50">
-                    {pwLoading ? '提交中...' : '确认修改'}
+                    {pwLoading ? '发送中...' : '发送验证码'}
                   </button>
-                  <button onClick={() => { setPwStep(1); setPwError(''); }} className="text-xs text-gray-400 hover:text-gray-600 transition">← 返回上一步</button>
                 </div>
-              </div>
-            )}
-            {pwError && <p className="text-xs text-red-500 mt-2">{pwError}</p>}
-          </div>
-
-          {/* 管理后台入口（仅管理员/巡查员可见） */}
-          {(currentUser?.role === 'admin' || currentUser?.role === 'moderator') && (
-            <div className="pb-5 border-b">
-              <h3 className="text-sm font-semibold text-gray-800 mb-3">管理</h3>
-              <Link to="/admin"
-                className="inline-flex items-center gap-2 px-4 py-2.5 bg-gray-50 text-gray-700 border border-gray-200 rounded-xl text-sm font-medium hover:bg-gray-100 transition">
-                <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                  <circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/>
-                </svg>
-                进入管理后台
-              </Link>
+              ) : (
+                <div className="space-y-2">
+                  <p className="text-xs text-primary-600">验证码已发送至注册邮箱，10 分钟内有效</p>
+                  <div className="flex items-center gap-2">
+                    <button onClick={handlePwResend} disabled={pwResendCd > 0 || pwLoading}
+                      className="text-xs text-primary-600 hover:underline disabled:text-gray-300 disabled:no-underline transition">
+                      没有收到邮件？{pwResendCd > 0 ? `重新发送（${pwResendCd}s）` : '重新发送'}
+                    </button>
+                  </div>
+                  <input type="text" value={pwCode} onChange={e => setPwCode(e.target.value)} placeholder="6 位验证码" maxLength={6}
+                    className="w-full px-3 py-2 border rounded-xl outline-none focus:border-primary-500 text-sm" />
+                  <input type="password" value={newPw} onChange={e => setNewPw(e.target.value)} placeholder="新密码"
+                    className="w-full px-3 py-2 border rounded-xl outline-none focus:border-primary-500 text-sm" />
+                  <p className="text-xs text-gray-400">至少 6 位，需包含大写字母和数字</p>
+                  <div className="flex gap-2">
+                    <button onClick={handlePwVerify} disabled={pwLoading}
+                      className="px-4 py-2 bg-primary-600 text-white rounded-xl text-sm font-medium hover:bg-primary-700 transition disabled:opacity-50">
+                      {pwLoading ? '提交中...' : '确认修改'}
+                    </button>
+                    <button onClick={() => { setPwStep(1); setPwError(''); }} className="text-xs text-gray-400 hover:text-gray-600 transition">← 返回上一步</button>
+                  </div>
+                </div>
+              )}
+              {pwError && <p className="text-xs text-red-500 mt-2">{pwError}</p>}
             </div>
-          )}
+            {/* 右列 */}
+            <div className="space-y-5">
+              {/* 管理后台入口（仅管理员/巡查员可见） */}
+              {(currentUser?.role === 'admin' || currentUser?.role === 'moderator') && (
+                <div className="pb-5 border-b">
+                  <h3 className="text-sm font-semibold text-gray-800 mb-3">管理</h3>
+                  <Link to="/admin"
+                    className="inline-flex items-center gap-2 px-4 py-2.5 bg-gray-50 text-gray-700 border border-gray-200 rounded-xl text-sm font-medium hover:bg-gray-100 transition">
+                    <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                      <circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/>
+                    </svg>
+                    进入管理后台
+                  </Link>
+                </div>
+              )}
 
-          {/* 常用功能（移动端底部导航移除的入口挪到这里） */}
-          <div className="pb-5 border-b">
-            <h3 className="text-sm font-semibold text-gray-800 mb-3">常用功能</h3>
-            <div className="flex gap-2 flex-wrap">
-              <Link to="/check-in"
-                className="inline-flex items-center gap-2 px-4 py-2.5 bg-gray-50 text-gray-700 border border-gray-200 rounded-xl text-sm font-medium hover:bg-gray-100 transition">
-                📅 每日签到
-              </Link>
-              <Link to="/tasks"
-                className="inline-flex items-center gap-2 px-4 py-2.5 bg-gray-50 text-gray-700 border border-gray-200 rounded-xl text-sm font-medium hover:bg-gray-100 transition">
-                ✅ 每日任务
-              </Link>
-            </div>
-          </div>
-
-          {/* 退出登录 */}
-          <div className="pb-5 border-b">
-            <h3 className="text-sm font-semibold text-gray-800 mb-3">退出登录</h3>
-            <button onClick={() => setLogoutModal(true)}
-              className="w-full md:w-auto px-4 py-2.5 bg-red-50 text-red-600 border border-red-200 rounded-xl text-sm font-medium hover:bg-red-100 transition">
-              退出当前账号
-            </button>
-          </div>
-
-          <div>
-            <h3 className="text-sm font-semibold text-red-600 mb-3">注销账户</h3>
-
-            {currentUser?.scheduled_deleted_at ? (() => {
-              const d = new Date(currentUser.scheduled_deleted_at!.replace(' ', 'T') + 'Z');
-              const remainingMs = d.getTime() - Date.now();
-              const totalHours = Math.max(0, Math.floor(remainingMs / (1000 * 60 * 60)));
-              const days = Math.floor(totalHours / 24);
-              const hours = totalHours % 24;
-              const remainingText = days > 0 ? `${days}天${hours}小时` : `${hours}小时`;
-              return (
-              <div className="bg-yellow-50 border border-yellow-200 rounded-xl p-4">
-                <p className="text-sm text-yellow-800 font-medium mb-1">⏳ 账户注销待处理</p>
-                <p className="text-xs text-yellow-700 mb-3">
-                  将在 <strong>{remainingText}</strong> 后自动注销。在此期间可随时取消。
-                </p>
-                <button onClick={async () => {
-                  try {
-                    const r = await authApi.cancelDeletion();
-                    if (r.success) {
-                      await refreshUser();
-                      flash('已取消账户注销');
-                    } else {
-                      flash(r.error || '取消失败', true);
-                    }
-                  } catch (err: any) {
-                    flash(err.message, true);
-                  }
-                }}
-                  className="px-4 py-2 bg-white border border-yellow-300 text-yellow-700 rounded-xl text-sm font-medium hover:bg-yellow-50 transition">
-                  取消注销
+              {/* 退出登录 */}
+              <div className="pb-5 border-b">
+                <h3 className="text-sm font-semibold text-gray-800 mb-3">退出登录</h3>
+                <button onClick={() => setLogoutModal(true)}
+                  className="w-full md:w-auto px-4 py-2.5 bg-red-50 text-red-600 border border-red-200 rounded-xl text-sm font-medium hover:bg-red-100 transition">
+                  退出当前账号
                 </button>
-              </div>);
-            })() : (
-              <>
-                <p className="text-xs text-gray-500 mb-3">注销后账户和所有内容将被清除，有 3 天冷静期可反悔。</p>
-                <button onClick={() => setDeleteModal({ step: 1, password: '', countdown: 5 })}
-                  className="px-4 py-2 bg-red-600 text-white rounded-xl text-sm font-medium hover:bg-red-700 transition">注销账户</button>
-              </>
-            )}
+              </div>
+
+              <div>
+                <h3 className="text-sm font-semibold text-red-600 mb-3">注销账户</h3>
+
+                {currentUser?.scheduled_deleted_at ? (() => {
+                  const d = new Date(currentUser.scheduled_deleted_at!.replace(' ', 'T') + 'Z');
+                  const remainingMs = d.getTime() - Date.now();
+                  const totalHours = Math.max(0, Math.floor(remainingMs / (1000 * 60 * 60)));
+                  const days = Math.floor(totalHours / 24);
+                  const hours = totalHours % 24;
+                  const remainingText = days > 0 ? `${days}天${hours}小时` : `${hours}小时`;
+                  return (
+                  <div className="bg-yellow-50 border border-yellow-200 rounded-xl p-4">
+                    <p className="text-sm text-yellow-800 font-medium mb-1">⏳ 账户注销待处理</p>
+                    <p className="text-xs text-yellow-700 mb-3">
+                      将在 <strong>{remainingText}</strong> 后自动注销。在此期间可随时取消。
+                    </p>
+                    <button onClick={async () => {
+                      try {
+                        const r = await authApi.cancelDeletion();
+                        if (r.success) {
+                          await refreshUser();
+                          flash('已取消账户注销');
+                        } else {
+                          flash(r.error || '取消失败', true);
+                        }
+                      } catch (err: any) {
+                        flash(err.message, true);
+                      }
+                    }}
+                      className="px-4 py-2 bg-white border border-yellow-300 text-yellow-700 rounded-xl text-sm font-medium hover:bg-yellow-50 transition">
+                      取消注销
+                    </button>
+                  </div>);
+                })() : (
+                  <>
+                    <p className="text-xs text-gray-500 mb-3">注销后账户和所有内容将被清除，有 3 天冷静期可反悔。</p>
+                    <button onClick={() => setDeleteModal({ step: 1, password: '', countdown: 5 })}
+                      className="px-4 py-2 bg-red-600 text-white rounded-xl text-sm font-medium hover:bg-red-700 transition">注销账户</button>
+                  </>
+                )}
+              </div>
+            </div>
           </div>
         </div>
       )}
