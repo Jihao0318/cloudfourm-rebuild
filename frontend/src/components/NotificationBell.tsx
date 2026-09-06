@@ -22,6 +22,7 @@ const TYPE_META: Record<string, { icon: string; cls: string }> = {
   follow:       { icon: '🤝', cls: 'bg-green-50 dark:bg-green-900/30' },
   post_takedown: { icon: '🚫', cls: 'bg-red-50 dark:bg-red-900/30' }, // 下架类通知（可申诉）
   post_rejected: { icon: '✏️', cls: 'bg-amber-50 dark:bg-amber-900/30' }, // 打回类通知（可修改重提）
+  email_change_ordered: { icon: '📧', cls: 'bg-orange-50 dark:bg-orange-900/30' }, // 责令更换邮箱（可点击前往办理）
   system:       { icon: '🔔', cls: 'bg-amber-50 dark:bg-amber-900/30' },
 };
 
@@ -287,6 +288,17 @@ export default function NotificationBell({ userId }: NotificationBellProps) {
                                       onClick={(e) => { e.stopPropagation(); setOpen(false); navigate(`/appeal/${n.post_id}`); }}
                                       className="text-xs font-medium text-blue-600 dark:text-blue-400 hover:underline">
                                       📄 申诉 →
+                                    </button>
+                                  </>
+                                )}
+                                {/* 责令更换邮箱：登录态下直接前往个人资料页完成更换（改邮箱成功即自动解除责令） */}
+                                {n.type === 'email_change_ordered' && (
+                                  <>
+                                    <p className="text-xs text-gray-500 dark:text-gray-400">请在个人资料页将邮箱更换为新邮箱，完成后责令自动解除</p>
+                                    <button
+                                      onClick={(e) => { e.stopPropagation(); setOpen(false); navigate('/profile'); }}
+                                      className="text-xs font-medium text-orange-600 dark:text-orange-400 hover:underline">
+                                      📧 去更换邮箱 →
                                     </button>
                                   </>
                                 )}

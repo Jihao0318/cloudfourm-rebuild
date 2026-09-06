@@ -300,6 +300,21 @@ auth.post('/login', async (c) => {
   const verifyCfg = await c.env.DB
     .prepare("SELECT value FROM settings WHERE key IN ('email_verification_required', 'require_email_verify') LIMIT 1")
     .first<{ value: string }>();
+  // 责令更换邮箱：管理员要求换绑新邮箱，未完成前拦截登录（密码已验证，签发 10 分钟换邮箱凭证）
+  if (row.email_change_ordered) {
+    const changeToken = createRefreshToken();
+    await createVerification(c.env.DB, row.id, 'email_change_token', changeToken, 10);
+    return c.json({
+      success: false,
+      error: '管理员要求你更换绑定邮箱，请先完成更换后登录',
+      data: {
+        need_email_change: true,
+        change_token: changeToken,
+        reason: row.email_change_reason || '',
+      },
+    }, 403);
+  }
+
   if (verifyCfg && (verifyCfg.value === '1' || verifyCfg.value === 'true') && !row.email_verified) {
     // 未验证账号引导走免登录验证页（/verify-email → verify-guest/resend-guest，发码到注册邮箱）
     return c.json({ success: false, error: '邮箱未验证，请先完成邮箱验证' }, 403);
@@ -598,6 +613,100 @@ auth.post('/email/resend-guest', async (c) => {
     success: true,
     message: '验证码已发送，请查收邮件',
     data: { masked_email: maskEmail(row.email) },
+  });
+});
+
+// 责令换邮箱凭证校验：verifications 表 type='email_change_token'（随机码、一次性、10 分钟），
+// 登录时密码已验证后签发，仅可用于 change-guest 换邮箱流程，不能通过 requireAuth
+async function verifyChangeToken(db: D1Database, token: unknown): Promise<number | null> {
+  if (typeof token !== 'string' || !token) return null;
+  const row = await db
+    .prepare("SELECT user_id FROM verifications WHERE type = 'email_change_token' AND code = ? AND used = 0 AND expires_at > datetime('now')")
+    .bind(token)
+    .first<{ user_id: number }>();
+  return row?.user_id ?? null;
+}
+
+// 责令换邮箱第一步：向用户输入的新邮箱发码（校验格式 + 未被其他账号占用；目标邮箱记入 data）
+auth.post('/email/change-guest/request', async (c) => {
+  const { change_token, email } = await c.req.json().catch(() => ({}));
+  const userId = await verifyChangeToken(c.env.DB, change_token);
+  if (!userId) return c.json({ success: false, error: '更换凭证已过期，请重新登录' }, 401);
+  const normalized = typeof email === 'string' ? email.trim().toLowerCase() : '';
+  const formatCheck = validateEmail(normalized);
+  if (!formatCheck.valid) return c.json({ success: false, error: formatCheck.error }, 400);
+  const occupied = await c.env.DB
+    .prepare('SELECT id FROM users WHERE email = ? AND id != ?')
+    .bind(normalized, userId)
+    .first<{ id: number }>();
+  if (occupied) return c.json({ success: false, error: '该邮箱已被其他账号绑定' }, 409);
+
+  const buf = new Uint8Array(6);
+  crypto.getRandomValues(buf);
+  const code = Array.from(buf).map((b) => b % 10).join('');
+  await createVerification(c.env.DB, userId, 'email_verify', code, 30, normalized);
+  const bindMail = verificationMailBody(code, 30);
+  const mailRes = await sendMail(c, {
+    to: normalized,
+    subject: '【CloudForum】绑定新邮箱',
+    text: bindMail.text,
+    html: bindMail.html,
+  });
+  if (!mailRes.ok) {
+    console.error('[email/change-guest/request] 邮件发送失败:', mailRes.error);
+    return c.json({ success: false, error: '验证码发送失败，请稍后重试' }, 502);
+  }
+  return c.json({
+    success: true,
+    message: '验证码已发送，请查收邮件',
+    data: { masked_email: maskEmail(normalized) },
+  });
+});
+
+// 责令换邮箱第二步：验证码确认 → 换绑新邮箱 + 清除责令 + email_verified=1 → 直接签发登录态
+auth.post('/email/change-guest/confirm', async (c) => {
+  const { change_token, email, code } = await c.req.json().catch(() => ({}));
+  const userId = await verifyChangeToken(c.env.DB, change_token);
+  if (!userId) return c.json({ success: false, error: '更换凭证已过期，请重新登录' }, 401);
+  const normalized = typeof email === 'string' ? email.trim().toLowerCase() : '';
+  if (!normalized || !code) return c.json({ success: false, error: '请输入邮箱和验证码' }, 400);
+
+  // 必须匹配「发码时记录的目标邮箱」（data），防止拿 A 邮箱的验证码绑 B 邮箱
+  const ver = await c.env.DB
+    .prepare("SELECT id, code FROM verifications WHERE user_id = ? AND type = 'email_verify' AND data = ? AND used = 0 AND expires_at > datetime('now') ORDER BY id DESC LIMIT 1")
+    .bind(userId, normalized)
+    .first<{ id: number; code: string }>();
+  if (!ver || ver.code !== String(code).trim()) return c.json({ success: false, error: '验证码错误或已过期' }, 400);
+
+  const occupied = await c.env.DB
+    .prepare('SELECT id FROM users WHERE email = ? AND id != ?')
+    .bind(normalized, userId)
+    .first<{ id: number }>();
+  if (occupied) return c.json({ success: false, error: '该邮箱已被其他账号绑定' }, 409);
+
+  await c.env.DB.batch([
+    c.env.DB.prepare('UPDATE verifications SET used = 1 WHERE id = ?').bind(ver.id),
+    c.env.DB.prepare("UPDATE users SET email = ?, email_verified = 1, email_change_ordered = 0, email_change_reason = NULL, email_change_ordered_at = NULL, updated_at = datetime('now') WHERE id = ?").bind(normalized, userId),
+    c.env.DB.prepare("UPDATE verifications SET used = 1 WHERE type = 'email_change_token' AND code = ?").bind(change_token),
+  ]);
+  await c.env.DB
+    .prepare("INSERT INTO security_logs (user_id, action, detail) VALUES (?, 'email_change_ordered', '责令更换邮箱已完成')")
+    .bind(userId)
+    .run()
+    .catch(() => {});
+
+  const user = await getUserById(c.env.DB, userId);
+  if (!user) return c.json({ success: false, error: '用户不存在' }, 404);
+  const token = await createToken({ userId: user.id, username: user.username, ver: user.token_version }, c.env.JWT_SECRET);
+  const refresh_token = await generateAndStoreRefreshToken(c.env.DB, user.id);
+  return c.json({
+    success: true,
+    message: '邮箱更换成功',
+    data: {
+      token,
+      refresh_token,
+      user: { id: user.id, username: user.username, email: user.email, role: user.role, email_verified: 1 },
+    },
   });
 });
 

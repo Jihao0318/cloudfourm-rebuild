@@ -41,7 +41,8 @@ admin.get('/users', async (c) => {
   const { users, total } = await listUsers(c.env.DB, page, pageSize);
   const safeUsers = users.map((u: any) => ({
     id: u.id, username: u.username, email: u.email, role: u.role,
-    email_verified: u.email_verified, twofa_enabled: u.twofa_enabled, created_at: u.created_at,
+    email_verified: u.email_verified, email_change_ordered: u.email_change_ordered,
+    twofa_enabled: u.twofa_enabled, created_at: u.created_at,
   }));
   return c.json({ success: true, data: safeUsers, total, page, pageSize });
 });
@@ -205,6 +206,53 @@ admin.delete('/users/:id/ban', async (c) => {
 // ===== 密码重置 + 安全日志 =====
 
 // 重置用户密码（仅管理员）：生成临时密码，明文仅此一次返回，并记安全日志
+// 责令更换邮箱：要求用户下次登录前换绑新邮箱（旧邮箱不可信场景）
+admin.put('/users/:id/order-email-change', requireAdminRole, async (c) => {
+  const id = parseId(c.req.param('id') ?? '');
+  if (id === null) return c.json({ success: false, error: '无效的用户ID' }, 400);
+  const { reason } = await c.req.json().catch(() => ({}));
+  const trimmed = typeof reason === 'string' ? reason.trim() : '';
+  if (!trimmed || trimmed.length > 200) return c.json({ success: false, error: '请填写责令原因（1-200 字，将展示给用户）' }, 400);
+  const target = await c.env.DB
+    .prepare('SELECT id, username FROM users WHERE id = ? AND deleted_at IS NULL')
+    .bind(id)
+    .first<{ id: number; username: string }>();
+  if (!target) return c.json({ success: false, error: '用户不存在' }, 404);
+
+  await c.env.DB
+    .prepare("UPDATE users SET email_change_ordered = 1, email_change_reason = ?, email_change_ordered_at = datetime('now') WHERE id = ?")
+    .bind(trimmed, id)
+    .run();
+  await c.env.DB
+    .prepare("INSERT INTO notifications (user_id, type, content, read) VALUES (?, 'email_change_ordered', ?, 0)")
+    .bind(id, `管理员要求你更换绑定邮箱（原因：${trimmed}）。请在登录状态下前往个人资料页完成更换；退出后登录时也会被引导完成。`)
+    .run()
+    .catch(() => {});
+  await c.env.DB
+    .prepare("INSERT INTO security_logs (user_id, action, detail) VALUES (?, 'email_change_ordered', ?)")
+    .bind(id, `管理员责令更换邮箱：${trimmed}`)
+    .run()
+    .catch(() => {});
+  return c.json({ success: true, message: `已责令用户「${target.username}」更换邮箱` });
+});
+
+// 解除责令（用户线下沟通解决后，管理员人工解除；用户完成换邮箱后也会自动清除）
+admin.put('/users/:id/cancel-email-change', requireAdminRole, async (c) => {
+  const id = parseId(c.req.param('id') ?? '');
+  if (id === null) return c.json({ success: false, error: '无效的用户ID' }, 400);
+  const res = await c.env.DB
+    .prepare('UPDATE users SET email_change_ordered = 0, email_change_reason = NULL, email_change_ordered_at = NULL WHERE id = ? AND email_change_ordered = 1')
+    .bind(id)
+    .run();
+  if (!res.meta.changes) return c.json({ success: false, error: '该用户未处于责令状态' }, 409);
+  await c.env.DB
+    .prepare("INSERT INTO security_logs (user_id, action, detail) VALUES (?, 'email_change_ordered', '管理员解除责令更换邮箱')")
+    .bind(id)
+    .run()
+    .catch(() => {});
+  return c.json({ success: true, message: '已解除责令' });
+});
+
 // 管理员直接设置邮箱验证状态：线下核实身份后人工放行（verified=1），
 // 或强制要求用户重新验证（verified=0，配合邮箱验证开启时下次登录将被拦）
 admin.put('/users/:id/email-verified', requireAdminRole, async (c) => {

@@ -426,6 +426,26 @@ function UsersPanel() {
   const handleRole = async (id: number, role: string) => {
     try { await adminApi.updateUserRole(id, role); setMsg('角色已更新'); load(); } catch (err: any) { setMsg(err.message); }
   };
+  // 责令更换邮箱：弹窗目标与原因输入
+  const [emailChangeTarget, setEmailChangeTarget] = useState<any>(null);
+  const [emailChangeReason, setEmailChangeReason] = useState('');
+  const handleOrderEmailChange = async () => {
+    if (!emailChangeTarget) return;
+    try {
+      await adminApi.orderEmailChange(emailChangeTarget.id, emailChangeReason.trim());
+      setMsg(`已责令「${emailChangeTarget.username}」更换邮箱`); setEmailChangeTarget(null); setEmailChangeReason(''); load();
+    } catch (err: any) { setMsg(err.message); }
+  };
+  const handleCancelEmailChange = async (u: any) => {
+    try { await adminApi.cancelEmailChange(u.id); setMsg(`已解除「${u.username}」的责令`); load(); }
+    catch (err: any) { setMsg(err.message); }
+  };
+  // 管理员切换邮箱验证状态（线下核实后放行，或强制要求用户重新验证）
+  const handleEmailVerified = async (u: any, verified: 0 | 1) => {
+    if (!window.confirm(`确认将用户「${u.username}」的邮箱标记为${verified === 1 ? '已验证' : '未验证'}？`)) return;
+    try { await adminApi.setEmailVerified(u.id, verified); setMsg(verified === 1 ? '已标记为已验证' : '已标记为未验证'); load(); }
+    catch (err: any) { setMsg(err.message); }
+  };
   const handleBan = async () => {
     if (!banTarget) return;
     try { await adminApi.banUser(banTarget.id, parseInt(banDays) || 1, banUnit, banReason.trim() || undefined); setMsg(`已封禁 ${banTarget.username}`); setBanTarget(null); setBanReason(''); load(); }
@@ -456,6 +476,28 @@ function UsersPanel() {
 
   return (
     <div>
+      {emailChangeTarget && (
+        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4" onClick={() => setEmailChangeTarget(null)}>
+          <div className="bg-white rounded-xl p-6 max-w-md w-full" onClick={e => e.stopPropagation()}>
+            <h3 className="font-bold text-lg mb-2">责令更换邮箱</h3>
+            <p className="text-sm text-gray-500 mb-3">用户：<span className="font-medium text-gray-800">{emailChangeTarget.username}</span></p>
+            <textarea
+              value={emailChangeReason}
+              onChange={e => setEmailChangeReason(e.target.value)}
+              placeholder="责令原因（1-200 字，将展示给用户）"
+              rows={3}
+              maxLength={200}
+              className="w-full border rounded-lg px-3 py-2 text-sm mb-1 focus:outline-none focus:ring-2 focus:ring-primary-500"
+            />
+            <p className="text-[11px] text-gray-400 mb-4">该用户下次登录时将被要求先更换到新邮箱（验证码发到新邮箱），完成后方可进站。</p>
+            <div className="flex gap-2 justify-end">
+              <button onClick={() => setEmailChangeTarget(null)} className="px-4 py-2 rounded-lg border text-sm text-gray-600 hover:bg-gray-50">取消</button>
+              <button onClick={handleOrderEmailChange} disabled={!emailChangeReason.trim()}
+                className="px-4 py-2 rounded-lg bg-orange-500 text-white text-sm font-medium hover:bg-orange-600 disabled:opacity-40">确认责令</button>
+            </div>
+          </div>
+        </div>
+      )}
       <Msg msg={msg} onClose={() => setMsg('')} />
       <div className="flex gap-2 mb-4">
         <input value={search} onChange={e => setSearch(e.target.value)} onKeyDown={e => e.key === 'Enter' && doSearch()}
@@ -475,9 +517,25 @@ function UsersPanel() {
                   <td className={tdCls}><Link to={`/user/${u.id}`} className="text-primary-600 hover:underline">{u.username}</Link></td>
                   <td className={`${tdCls} text-gray-500`}>{u.email}</td>
                   <td className={tdCls}>
-                    {u.email_verified
-                      ? <span className="text-[11px] bg-green-50 text-green-600 px-2 py-0.5 rounded font-medium">✓ 已验证</span>
-                      : <span className="text-[11px] bg-amber-50 text-amber-600 px-2 py-0.5 rounded font-medium">⚠ 未验证</span>}
+                    {u.email_change_ordered ? (
+                      <button
+                        onClick={() => handleCancelEmailChange(u)}
+                        title="点击解除责令（用户线下沟通解决后使用）"
+                        className="text-[11px] bg-orange-50 text-orange-600 px-2 py-0.5 rounded font-medium border border-orange-200 hover:bg-orange-100 transition hover:opacity-80">
+                        责令换邮箱中 · 点击解除
+                      </button>
+                    ) : (
+                    <button
+                      onClick={() => handleEmailVerified(u, u.email_verified ? 0 : 1)}
+                      title="点击切换邮箱验证状态（管理员线下核实后使用）"
+                      className={`text-[11px] px-2 py-0.5 rounded font-medium border transition hover:opacity-80 ${
+                        u.email_verified
+                          ? 'bg-green-50 text-green-600 border-green-200 hover:bg-green-100'
+                          : 'bg-amber-50 text-amber-600 border-amber-200 hover:bg-amber-100'
+                      }`}>
+                      {u.email_verified ? '✓ 已验证' : '⚠ 未验证'}
+                    </button>
+                    )}
                   </td>
                   <td className={tdCls}>
                     <select value={u.role} onChange={e => handleRole(u.id, e.target.value)} className="px-2 py-1 border rounded-lg text-xs">
@@ -490,6 +548,11 @@ function UsersPanel() {
                       : <span className="text-green-600">正常</span>}
                   </td>
                   <td className={`${tdCls} text-right whitespace-nowrap`}>
+                    {u.email_change_ordered ? (
+                      <button onClick={() => handleCancelEmailChange(u)} className="px-2.5 py-1.5 rounded-lg border text-xs text-orange-600 border-orange-200 hover:bg-orange-50 mr-1.5">解除责令</button>
+                    ) : (
+                      <button onClick={() => setEmailChangeTarget(u)} className="px-2.5 py-1.5 rounded-lg border text-xs text-gray-600 border-gray-200 hover:bg-gray-50 mr-1.5">责令换邮箱</button>
+                    )}
                     {u.banned_until
                       ? <button onClick={() => handleUnban(u.id)} className="px-2.5 py-1.5 rounded-lg border text-xs text-green-600 border-green-200 hover:bg-green-50 mr-1.5">解封</button>
                       : <button onClick={() => { setBanTarget(u); setBanReason(''); }} className="px-2.5 py-1.5 rounded-lg border text-xs text-red-600 border-red-200 hover:bg-red-50 mr-1.5">封禁</button>}

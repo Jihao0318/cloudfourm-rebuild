@@ -5,10 +5,17 @@ import { auth, setToken, getToken, setRefreshToken } from '../services/api';
 interface AuthContextType {
   user: User | null;
   loading: boolean;
-  login: (email: string, password: string) => Promise<{ success: boolean; error?: string }>;
+  login: (email: string, password: string) => Promise<{
+    success: boolean;
+    error?: string;
+    /** 登录被拦时携带的引导数据：责令换邮箱凭证与原因 */
+    data?: { need_email_change?: boolean; change_token?: string; reason?: string };
+  }>;
   register: (username: string, email: string, password: string, invite_code?: string) => Promise<{ success: boolean; error?: string }>;
   logout: () => Promise<void>;
   refreshUser: () => Promise<void>;
+  /** 直接写入会话（责令换邮箱/免登录流程：后端签发登录态后由页面调用） */
+  applySession: (token: string, refresh_token: string | undefined, user: User) => void;
 }
 
 const AuthContext = createContext<AuthContextType | null>(null);
@@ -66,9 +73,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         return { success: true };
       }
       // 透传 403 邮箱绑定/验证响应的 data（bind_token、has_email、masked_email），供登录页跳转绑定流程
-      return { success: false, error: res.error, data: res.data };
+      // 透传 403 邮箱引导数据（data 形状随拦截类型不同：责令换邮箱/邮箱未验证），断言放宽供登录页消费
+      return { success: false, error: res.error, data: res.data as { need_email_change?: boolean; change_token?: string; reason?: string } };
     } catch (err: any) {
-      return { success: false, error: err.message || '登录失败' };
+      // 非 2xx 抛错时 err.data 携带引导字段（need_email_change/change_token 等），一并透传
+      return { success: false, error: err.message || '登录失败', data: err.data };
     }
   };
 
@@ -100,9 +109,16 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     await fetchUser();
   };
 
+  // 责令换邮箱等免登录流程专用：后端直接签发登录态，此处写入会话
+  const applySession = (token: string, refresh_token: string | undefined, user: User) => {
+    setToken(token);
+    if (refresh_token) setRefreshToken(refresh_token);
+    setUser(user);
+  };
+
 
   return (
-    <AuthContext.Provider value={{ user, loading, login, register, logout, refreshUser }}>
+    <AuthContext.Provider value={{ user, loading, login, register, logout, refreshUser, applySession }}>
       {children}
     </AuthContext.Provider>
   );

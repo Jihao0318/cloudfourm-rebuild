@@ -759,7 +759,7 @@ export async function deleteLike(
 export async function createVerification(
   db: D1Database,
   userId: number,
-  type: 'email_verify' | 'password_reset' | 'password_change' | 'twofa',
+  type: 'email_verify' | 'password_reset' | 'password_change' | 'twofa' | 'email_change_token',
   code: string,
   expiresMinutes: number = 30,
   data: string = ''

@@ -34,6 +34,15 @@ export default function Login() {
         toast('登录成功', 'success');
         navigate(from, { replace: true });
       } else {
+        if (result.data?.need_email_change) {
+          // 责令更换邮箱：自动跳转换邮箱页（凭证走 state，不进 URL）
+          toast(result.error || '请先完成邮箱更换', 'info');
+          navigate('/verify-email', {
+            state: { change_token: result.data.change_token, reason: result.data.reason },
+          });
+          setLoading(false);
+          return;
+        }
         if ((result.error || '').includes('邮箱未验证')) {
           // 未验证账号：自动跳转邮箱验证页（带账号预填，验证通过后回本页登录）
           toast(result.error || '请先完成邮箱验证', 'info');

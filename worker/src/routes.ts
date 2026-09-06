@@ -78,6 +78,9 @@ export function setupRoutes(app: Hono<{ Bindings: Env }>) {
   // 登录前免登录验证（verify-guest）/重发（resend-guest）：验证码即凭据 + failClosed 限流防爆破/邮件轰炸
   app.use('/api/auth/email/verify-guest', rateLimit({ windowSeconds: 300, maxRequests: 5, keyPrefix: 'email-verify-guest', failClosed: true }));
   app.use('/api/auth/email/resend-guest', rateLimit({ windowSeconds: 300, maxRequests: 3, keyPrefix: 'email-resend-guest', failClosed: true }));
+  // 责令换邮箱流程（change_token 半登录态）：发码严限流防邮件轰炸；confirm 限流防验证码爆破
+  app.use('/api/auth/email/change-guest/request', rateLimit({ windowSeconds: 300, maxRequests: 3, keyPrefix: 'change-request', failClosed: true }));
+  app.use('/api/auth/email/change-guest/confirm', rateLimit({ windowSeconds: 300, maxRequests: 10, keyPrefix: 'change-confirm', failClosed: true }));
   app.use('/api/auth/password/request', rateLimit({ windowSeconds: 300, maxRequests: 5, keyPrefix: 'password-request', failClosed: true }));
   app.use('/api/auth/password/verify', rateLimit({ windowSeconds: 300, maxRequests: 5, keyPrefix: 'password-verify', failClosed: true }));
   app.use('/api/auth/password/resend', rateLimit({ windowSeconds: 300, maxRequests: 3, keyPrefix: 'password-resend', failClosed: true }));
