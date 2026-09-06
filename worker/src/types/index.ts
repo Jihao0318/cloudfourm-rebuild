@@ -263,4 +263,6 @@ export interface Env {
   QUEUE?: Queue<{ postId: number }>;
   /** 审核后端 service binding（可选，未配置走公网 JUDGE_API_URL） */
   JUDGE?: Fetcher;
+  /** 邮件网关 service binding（可选，未配置走公网 MAILER_URL） */
+  MAILER?: Fetcher;
 }

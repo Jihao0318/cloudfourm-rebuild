@@ -35,15 +35,62 @@ export async function sendMail(ctx: { env: Env }, payload: MailPayload): Promise
   if (isBlockedHost(parsed.hostname)) return { ok: false, error: '邮件服务地址不合法' };
 
   try {
-    const res = await fetch(url, {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${token}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify(payload),
-      signal: AbortSignal.timeout(15000),
-    });
+    // 双通道：MAILER service binding 优先（同账号 worker 公网互调被 CF 1042 拒绝，必须内网）；
+    // binding 返回 5xx 或抛错时回退公网 URL 重试一次；未配置 binding 走公网
+    const callViaBinding = async (): Promise<Response> => {
+      if (!ctx.env.MAILER) throw new Error('MAILER binding 未配置');
+      return ctx.env.MAILER.fetch(new Request(url, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(payload),
+        signal: AbortSignal.timeout(15000),
+      }));
+    };
+    let res: Response;
+    try {
+      if (ctx.env.MAILER) {
+        const bindingRes = await callViaBinding();
+        if (bindingRes.status < 500) {
+          res = bindingRes;
+        } else {
+          console.error('[mailer] binding 5xx，回退公网:', bindingRes.status);
+          res = await fetch(url, {
+            method: 'POST',
+            headers: {
+              Authorization: `Bearer ${token}`,
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify(payload),
+            signal: AbortSignal.timeout(15000),
+          });
+        }
+      } else {
+        res = await fetch(url, {
+          method: 'POST',
+          headers: {
+            Authorization: `Bearer ${token}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify(payload),
+          signal: AbortSignal.timeout(15000),
+        });
+      }
+    } catch (bindingErr: any) {
+      if (bindingErr?.message === 'MAILER binding 未配置') throw bindingErr;
+      console.error('[mailer] binding 调用失败，回退公网:', bindingErr?.message);
+      res = await fetch(url, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(payload),
+        signal: AbortSignal.timeout(15000),
+      });
+    }
     const data = await res.json().catch(() => ({}));
     if (res.ok && (data as any)?.ok) return { ok: true };
     return { ok: false, error: (data as any)?.error || `邮件服务返回 ${res.status}` };

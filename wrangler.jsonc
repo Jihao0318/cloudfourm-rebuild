@@ -7,9 +7,12 @@
 
   // 不绑定任何自定义域名（用户后期自行做 CF IP 优选与 DNS 配置），使用 workers.dev 默认免费域名
 
-  // AI 审核后端 service binding：同账号 worker 间公网互调被 CF 1042 拒绝，
-  // callJudge/review 走 binding 内网通道（env.JUDGE 优先，未配置才回退公网 URL）
-  "services": [{ "binding": "JUDGE", "service": "forum-ai" }],
+  // 内部服务 binding：同账号 worker 间公网互调被 CF 1042 拒绝，
+  // 走 binding 内网通道（env.JUDGE / env.MAILER 优先，未配置才回退公网 URL）
+  "services": [
+    { "binding": "JUDGE", "service": "forum-ai" },
+    { "binding": "MAILER", "service": "mailer" }
+  ],
 
   "d1_databases": [
     {
