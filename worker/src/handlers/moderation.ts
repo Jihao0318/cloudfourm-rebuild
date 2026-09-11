@@ -99,13 +99,12 @@ moderation.get('/review-posts', requireAdmin, async (c) => {
 
   const pLimit = await passLimit(db);
   const vLimit = await violationLimit(db);
-  // 付费帖正文对巡查员同样隐藏（与列表/详情口径一致）：只给锁定标记，
-  // 需要查看正文时得像普通用户一样付费解锁（管理员在详情页不受限）。
-  // 前端巡查卡片对 __PAID__ 前缀已有「付费内容，请点击原帖查看」的展示分支
-  const safeRows = (rows.results || []).map((p: any) => p.price ? { ...p, content: '__PAID__' + p.price } : p);
+  // 付费帖在巡查队列里照常返回正文（审核需要读内容），price 一并返回，
+  // 由前端巡查卡片在顶栏标注「付费帖 · 需 X 积分」；
+  // 队列之外（帖子详情页）巡查员与普通用户一样要付费解锁（见 posts.ts 的付费门禁）
   return c.json({
     success: true,
-    data: safeRows,
+    data: rows.results || [],
     total: totalRow?.cnt || 0,
     page,
     pageSize,

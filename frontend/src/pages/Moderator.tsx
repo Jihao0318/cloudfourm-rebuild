@@ -453,6 +453,12 @@ function PostsPatrol() {
                 <div className="flex items-center gap-2 flex-wrap">
                   <span className="text-sm font-semibold text-gray-800 dark:text-gray-100">用户一</span>
                   <span className="text-[11px] bg-gray-100 dark:bg-gray-700 text-gray-500 dark:text-gray-400 px-2 py-0.5 rounded font-medium">{current.category_name || '未分类'}</span>
+                  {/* 付费帖标注：队列内照常展示正文（审核需要读内容），但明确提示这是付费帖及其价格 */}
+                  {!!current.price && (
+                    <span className="text-[11px] bg-amber-50 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300 px-2 py-0.5 rounded font-medium">
+                      🔒 付费帖 · 需 {current.price} 积分
+                    </span>
+                  )}
                   {currentIsPending ? (
                     <>
                       {current.ai_action === 'approved' && (
@@ -483,13 +489,11 @@ function PostsPatrol() {
             <div className="px-4 py-4">
               <h3 className="font-bold text-gray-900 dark:text-gray-100 text-lg mb-2">{current.title}</h3>
               <div className="text-[15px] text-gray-700 dark:text-gray-300 leading-relaxed prose prose-sm max-w-none">
-                {typeof current.content === 'string' && current.content.startsWith('__PAID__')
-                  ? <p className="text-gray-400">【付费内容，巡查员请点击原帖查看】</p>
-                  : current.content ? (
-                    <ReactMarkdown remarkPlugins={[remarkGfm, remarkBreaks]} rehypePlugins={[rehypeRaw, [rehypeSanitize, markdownSchema]]} components={patrolMarkdownComponents}>
-                      {current.content}
-                    </ReactMarkdown>
-                  ) : <p className="text-gray-400">（无内容）</p>}
+                {current.content ? (
+                  <ReactMarkdown remarkPlugins={[remarkGfm, remarkBreaks]} rehypePlugins={[rehypeRaw, [rehypeSanitize, markdownSchema]]} components={patrolMarkdownComponents}>
+                    {current.content}
+                  </ReactMarkdown>
+                ) : <p className="text-gray-400">（无内容）</p>}
               </div>
             </div>
 
