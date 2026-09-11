@@ -236,7 +236,7 @@ export async function consumeAiReviewMessage(postId: number, env: Env): Promise<
       // AI 判定只作为参考（巡查卡片展示「AI 判定无问题 + 置信度」，数据来自 ai_review_logs）
       await writeAiReviewLog(db, { post, verdict: normVerdict, action: 'approved' });
     } else {
-      // 确定 + flag → AI 下架（软删；30 天保留期内可申诉，申诉通过自动恢复）
+      // 确定 + flag → AI 下架（软删；后台保留期内的申诉机制仍在 appeals.ts，但通知里不给申诉引导）
       const reason = (verdict.summary || (verdict.reasons || []).join('；') || '违规内容').slice(0, 200);
       const upd = await db
         .prepare("UPDATE posts SET deleted_at = datetime('now'), flagged_by = 'ai', flagged_reason = ? WHERE id = ? AND review_status IN ('pending','cleared')")
@@ -244,7 +244,7 @@ export async function consumeAiReviewMessage(postId: number, env: Env): Promise<
         .run();
       if ((upd.meta.changes || 0) > 0 && post.user_id != null) {
         const shortTitle = (post.title || '').slice(0, 30);
-        const content = `🚫 你的帖子「${shortTitle}」因违规被 AI 下架（原因：${reason}）。如有异议，可提交申诉进入复审`;
+        const content = `🚫 你的帖子「${shortTitle}」因违规被 AI 下架（原因：${reason}）`;
         try {
           await createNotification(db, post.user_id, null, 'system', postId, undefined, content);
         } catch (e) {
