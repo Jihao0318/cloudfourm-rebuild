@@ -14,6 +14,10 @@ function getLocalDate(): string {
   return new Date(d.getTime() - offset * 60000).toISOString().slice(0, 10);
 }
 
+// 连续签到积分阶梯（7 天一轮，第 8 天回到第 1 天）
+// 必须与后端 worker/src/handlers/check-in.ts 的 CHECKIN_REWARDS 保持一致
+const CHECKIN_LADDER = [1, 2, 3, 5, 8, 13, 20];
+
 export default function CheckIn() {
   const { user, loading: authLoading } = useAuth();
   const { toast } = useToast();
@@ -159,9 +163,24 @@ export default function CheckIn() {
 
       <div className="bg-white rounded-2xl border p-6">
         <h3 className="font-bold text-gray-900 mb-3">签到奖励规则</h3>
-        <div className="space-y-1 text-sm text-gray-600">
-          <p>• 每日签到可获得积分奖励</p>
-          <p>• 连续签到奖励更丰厚</p>
+
+        {/* 连续签到积分阶梯（与后端 CHECKIN_REWARDS 一致，改动需同步 worker/src/handlers/check-in.ts） */}
+        <p className="text-xs text-gray-500 mb-2">积分按 7 天一轮循环递增（第 8 天与第 1 天相同，连续天数照常累加）：</p>
+        <div className="grid grid-cols-4 sm:grid-cols-7 gap-1.5 mb-4">
+          {CHECKIN_LADDER.map((coins, i) => (
+            <div key={i} className="rounded-lg border border-primary-100 bg-primary-50/60 py-2 text-center">
+              <div className="text-[10px] text-gray-500">第 {i + 1} 天</div>
+              <div className="text-sm font-bold text-primary-600">+{coins}</div>
+            </div>
+          ))}
+        </div>
+
+        <div className="space-y-1.5 text-sm text-gray-600">
+          <p>• 每次签到额外获得 <strong className="text-gray-800">2 经验</strong>（用于等级系统，与连续天数无关）</p>
+          <p>• VIP 加成与阶梯奖励叠加：<strong className="text-gray-800">VIP +2、S-VIP +3、SVIP+ +5</strong></p>
+          <p>• 每天只能签到一次；断签后连续天数归 1，积分阶梯从头开始</p>
+          <p>• 签到奖励必定发放，<strong className="text-gray-800">没有每日积分上限</strong></p>
+          <p>• 连续签到满 30 天解锁「全勤王」成就，额外奖励 300 积分</p>
         </div>
       </div>
     </div>
