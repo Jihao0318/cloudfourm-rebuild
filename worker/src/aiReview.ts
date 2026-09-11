@@ -220,10 +220,11 @@ export async function consumeAiReviewMessage(postId: number, env: Env): Promise<
         .run();
       if ((upd.meta.changes || 0) > 0 && post.user_id != null) {
         const shortTitle = (post.title || '').slice(0, 30);
-        const content = `🤔 你的帖子「${shortTitle}」AI 审核无法确定是否合规${confText ? `（置信度 ${confText}）` : ''}，已转入人工复核`;
+        // 仅提醒「帖子可能有问题、已转人工复核」：帖子并未下架，所以不带申诉入口。
+        // 注意通知类型必须用 system —— post_takedown 会渲染「去申诉」按钮（那是下架场景用的）
+        const content = `🤔 你的帖子「${shortTitle}」可能存在问题：AI 审核无法确定是否违规${confText ? `（置信度 ${confText}）` : ''}，已转入人工复核，帖子目前仍正常显示`;
         try {
-          // type=post_takedown：前端通知组件对此类型自动渲染「去申诉」按钮（跳 /appeal/:postId）
-          await createNotification(db, post.user_id, null, 'post_takedown', postId, undefined, content);
+          await createNotification(db, post.user_id, null, 'system', postId, undefined, content);
         } catch (e) {
           // 通知失败仅记日志不 throw：重试时帖子状态已被守卫跳过，抛错只会造成无意义重试空转
           console.error(`ai_review.notify_failed post=${postId}:`, e);
