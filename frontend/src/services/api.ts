@@ -607,7 +607,7 @@ export const checkIn = {
 // Coins
 export const coins = {
   balance: () => request<{ coins: number; total_earned: number; total_spent: number }>('/coins/balance'),
-  todayEarnings: () => request<{ today_total: number; daily_max: number; details: { type: string; amount: number; count: number }[] }>('/coins/today-earnings'),
+  todayEarnings: () => request<{ today_total: number; details: { type: string; amount: number; count: number }[] }>('/coins/today-earnings'),
   transactions: (page?: number) => request<any[]>(`/coins/transactions?page=${page || 1}`),
   transfer: (to_user_id: number, amount: number) =>
     request<null>('/coins/transfer', { method: 'POST', body: JSON.stringify({ to_user_id, amount }) }),

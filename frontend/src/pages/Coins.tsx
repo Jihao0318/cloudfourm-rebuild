@@ -14,7 +14,7 @@ export default function Coins() {
   const [balance, setBalance] = useState<{ coins: number; total_earned: number; total_spent: number } | null>(null);
   const [loading, setLoading] = useState(true);
   const [message, setMessage] = useState('');
-  const [todayEarnings, setTodayEarnings] = useState<{ today_total: number; daily_max: number; details: { type: string; amount: number; count: number }[] } | null>(null);
+  const [todayEarnings, setTodayEarnings] = useState<{ today_total: number; details: { type: string; amount: number; count: number }[] } | null>(null);
 
   // 转账状态
   const [searchQuery, setSearchQuery] = useState('');
@@ -194,35 +194,19 @@ export default function Coins() {
         <span className="text-gray-300 group-hover:text-red-400 transition text-lg">→</span>
       </Link>
 
-      {/* 今日收入概况（合并进度条 + 获取方式） */}
+      {/* 今日收入概况（已取消每日上限，改为直接展示今日累计与获取方式） */}
       <div className="bg-white rounded-2xl border p-4 sm:p-6">
-        <div className="flex items-center justify-between mb-3">
+        <div className="flex items-center justify-between mb-1">
           <h3 className="font-bold text-gray-900">今日收入概况</h3>
           {todayEarnings && (
             <span className="text-sm text-gray-500">
-              已赚 <strong className={todayEarnings.today_total >= todayEarnings.daily_max ? 'text-green-600' : 'text-primary-600'}>
-                {todayEarnings.today_total}
-              </strong> / {todayEarnings.daily_max} 分
+              今日已赚 <strong className="text-primary-600">{todayEarnings.today_total}</strong> 分
             </span>
           )}
         </div>
-
-        {/* 进度条 */}
-        {todayEarnings ? (
-          <>
-            <div className="w-full h-2.5 bg-gray-100 rounded-full overflow-hidden mb-1">
-              <div className="h-full bg-gradient-to-r from-green-400 to-green-500 rounded-full transition-all duration-500"
-                style={{ width: `${Math.min(100, (todayEarnings.today_total / todayEarnings.daily_max) * 100)}%` }} />
-            </div>
-            <p className="text-xs text-gray-400 mb-4">
-              {todayEarnings.today_total >= todayEarnings.daily_max
-                ? '今日收入已达上限！'
-                : `还可赚 ${todayEarnings.daily_max - todayEarnings.today_total} 分`}
-            </p>
-          </>
-        ) : (
-          <div className="w-full h-2.5 bg-gray-100 rounded-full overflow-hidden mb-4 animate-pulse" />
-        )}
+        <p className="text-xs text-gray-400 mb-4">
+          各项奖励按每日次数发放（发帖 2 次、评论 5 次、被点赞 5 次、签到 1 次），已无每日总分上限
+        </p>
 
         {/* 各项收入明细 */}
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-sm">
