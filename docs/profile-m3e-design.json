@@ -1,0 +1,107 @@
+{
+  "title": "CloudForum 个人主页",
+  "brief": "论坛个人主页：展示用户资料与帖子，管理收藏、成长（等级与成就）、邀请好友和账号设置。",
+  "frame": "phone",
+  "platform": "web",
+  "paletteKey": "blue",
+  "theme": { "dark": false, "bothModes": true, "contrast": "standard", "shape": "rounded", "font": "system", "emphasized": false, "motion": "expressive" },
+  "frames": [
+    { "id": "profile", "name": "个人主页", "x": 0, "y": 0, "note": "用户主页默认视图：头部资料 + 五个标签 + 该用户的帖子列表。他人主页只显示「帖子」标签并多一个「+ 关注」按钮；被封禁的用户在用户名行显示封禁状态，展开后可提交解封申请。" },
+    { "id": "bookmarks", "name": "我的收藏", "x": 492, "y": 0, "note": "我收藏的帖子，每页 20 条，按收藏时间倒序；空态文案「暂无收藏」。" },
+    { "id": "growth", "name": "成长", "x": 984, "y": 0, "note": "等级经验进度条与全部成就网格：已解锁排前面，未解锁灰显并预览奖励（积分/称号/头像框/经验）。" },
+    { "id": "invite", "name": "邀请好友", "x": 1476, "y": 0, "note": "生成邀请码、复制邀请码或邀请链接，查看已邀请人数与累计积分奖励。同时只能有 1 个未使用的邀请码。" },
+    { "id": "settings", "name": "设置", "x": 1968, "y": 0, "note": "编辑账号资料（用户名/简介/邮箱，VIP 附加自定义头衔与昵称主题）与安全设置。修改密码与更换邮箱各自跳转独立页面；注销账户为三步确认流程（密码验证 → 5 秒冷静倒计时 → 提交，3 天冷静期内可取消）。" }
+  ],
+  "groups": [
+    { "id": "g-p-appbar", "x": 0, "y": 0, "axis": "x", "items": [ { "id": "p-appbar", "kind": "topAppBar", "label": "个人主页", "icon": "arrow_back", "icon2": null, "variant": "filled", "actions": { "icon": { "to": "back" } } } ] },
+    { "id": "g-p-tabs", "x": 0, "y": 88, "axis": "x", "items": [ { "id": "p-tabs", "kind": "tabs", "label": "", "icon": null, "variant": "filled",
+      "tabs": [ { "icon": "article", "label": "帖子" }, { "icon": "star", "label": "收藏" }, { "icon": "trending_up", "label": "成长" }, { "icon": "group_add", "label": "邀请" }, { "icon": "settings", "label": "设置" } ],
+      "selected": 0,
+      "actions": { "tab:1": { "to": "bookmarks", "transition": "fade" }, "tab:2": { "to": "growth", "transition": "fade" }, "tab:3": { "to": "invite", "transition": "fade" }, "tab:4": { "to": "settings", "transition": "fade" } },
+      "note": "仅本人显示全部五个标签；他人主页只显示「帖子」标签。" } ] },
+    { "id": "g-p-banner", "x": 16, "y": 152, "axis": "x", "items": [ { "id": "p-banner", "kind": "box", "label": "", "icon": null, "variant": "filled", "size": 380, "size2": 120, "fill": "primaryContainer", "note": "背景图区域（5:2 比例）：展示用户设置的背景图，点击放大预览；仅本人显示「更换背景」按钮（选图后裁剪再上传）。" } ] },
+    { "id": "g-p-avatar", "x": 16, "y": 292, "axis": "x", "items": [ { "id": "p-avatar", "kind": "image", "label": "", "icon": null, "variant": "filled", "size": 88, "note": "头像（圆形展示，带头像框）。点击放大预览；仅本人显示「+」上传按钮（选图后裁剪再上传）。" } ] },
+    { "id": "g-p-name", "x": 116, "y": 300, "axis": "x", "items": [ { "id": "p-name", "kind": "text", "label": "小舟", "size": 24, "bold": true, "icon": null, "variant": "filled" } ] },
+    { "id": "g-p-chips", "x": 116, "y": 344, "axis": "x", "items": [
+      { "id": "p-chip-vip", "kind": "chip", "label": "👑 S VIP", "icon": null, "variant": "outlined" },
+      { "id": "p-chip-lv", "kind": "chip", "label": "Lv.1 初学乍练", "icon": null, "variant": "outlined" },
+      { "id": "p-chip-title", "kind": "chip", "label": "🏅 人气王", "icon": null, "variant": "outlined" }
+    ] },
+    { "id": "g-p-bio", "x": 116, "y": 388, "axis": "x", "items": [ { "id": "p-bio", "kind": "text", "label": "热爱折腾与分享 🌱", "size": 14, "icon": null, "variant": "filled" } ] },
+    { "id": "g-p-stats", "x": 16, "y": 432, "axis": "x", "items": [ { "id": "p-stats", "kind": "text", "label": "注册于 2026-01-01 · 128 篇帖子", "size": 13, "icon": null, "variant": "filled" } ] },
+    { "id": "g-p-posts-h", "x": 16, "y": 472, "axis": "x", "items": [ { "id": "p-posts-h", "kind": "text", "label": "帖子（128）", "size": 18, "bold": true, "icon": null, "variant": "filled" } ] },
+    { "id": "g-p-posts", "x": 16, "y": 508, "axis": "y", "items": [
+      { "id": "p-post1", "kind": "listItem", "label": "如何在论坛发好帖", "supporting": "经验分享 · 3 天前 · 浏览 120 · 评论 8 · 赞 12", "icon": "article", "variant": "filled", "note": "点击进入帖子详情" },
+      { "id": "p-post2", "kind": "listItem", "label": "二手转让机械键盘", "supporting": "二手市场 · 1 周前 · 浏览 45 · 评论 2 · 赞 1", "icon": "article", "variant": "filled" },
+      { "id": "p-post3", "kind": "listItem", "label": "本周运势打卡", "supporting": "日常 · 昨天 · 浏览 30 · 评论 1 · 赞 3", "icon": "article", "variant": "filled" }
+    ] },
+    { "id": "g-p-page", "x": 150, "y": 748, "axis": "x", "items": [
+      { "id": "p-page-prev", "kind": "iconButton", "label": "", "icon": "chevron_left", "variant": "outlined" },
+      { "id": "p-page-num", "kind": "text", "label": "1 / 13", "size": 13, "icon": null, "variant": "filled" },
+      { "id": "p-page-next", "kind": "iconButton", "label": "", "icon": "chevron_right", "variant": "outlined" }
+    ] },
+
+    { "id": "g-b-appbar", "x": 492, "y": 0, "axis": "x", "items": [ { "id": "b-appbar", "kind": "topAppBar", "label": "我的收藏", "icon": "arrow_back", "icon2": null, "variant": "filled", "actions": { "icon": { "to": "back" } } } ] },
+    { "id": "g-b-tabs", "x": 492, "y": 88, "axis": "x", "items": [ { "id": "b-tabs", "kind": "tabs", "label": "", "icon": null, "variant": "filled",
+      "tabs": [ { "icon": "article", "label": "帖子" }, { "icon": "star", "label": "收藏" }, { "icon": "trending_up", "label": "成长" }, { "icon": "group_add", "label": "邀请" }, { "icon": "settings", "label": "设置" } ],
+      "selected": 1,
+      "actions": { "tab:0": { "to": "profile", "transition": "fade" }, "tab:2": { "to": "growth", "transition": "fade" }, "tab:3": { "to": "invite", "transition": "fade" }, "tab:4": { "to": "settings", "transition": "fade" } } } ] },
+    { "id": "g-b-list", "x": 508, "y": 160, "axis": "y", "items": [
+      { "id": "b-bm1", "kind": "listItem", "label": "如何在论坛发好帖", "supporting": "作者：小舟 · 💬 8 · ❤️ 12", "icon": "bookmark", "variant": "filled", "note": "点击进入帖子详情" },
+      { "id": "b-bm2", "kind": "listItem", "label": "论坛积分攻略汇总", "supporting": "作者：机昊xd · 💬 3 · ❤️ 5", "icon": "bookmark", "variant": "filled" },
+      { "id": "b-bm3", "kind": "listItem", "label": "校园二手交易须知", "supporting": "作者：阿早 · 💬 6 · ❤️ 9", "icon": "bookmark", "variant": "filled" }
+    ] },
+    { "id": "g-b-page", "x": 642, "y": 420, "axis": "x", "items": [
+      { "id": "b-page-prev", "kind": "iconButton", "label": "", "icon": "chevron_left", "variant": "outlined" },
+      { "id": "b-page-num", "kind": "text", "label": "1 / 2", "size": 13, "icon": null, "variant": "filled" },
+      { "id": "b-page-next", "kind": "iconButton", "label": "", "icon": "chevron_right", "variant": "outlined" }
+    ] },
+
+    { "id": "g-g-appbar", "x": 984, "y": 0, "axis": "x", "items": [ { "id": "g-appbar", "kind": "topAppBar", "label": "成长", "icon": "arrow_back", "icon2": null, "variant": "filled", "actions": { "icon": { "to": "back" } } } ] },
+    { "id": "g-g-tabs", "x": 984, "y": 88, "axis": "x", "items": [ { "id": "g-tabs", "kind": "tabs", "label": "", "icon": null, "variant": "filled",
+      "tabs": [ { "icon": "article", "label": "帖子" }, { "icon": "star", "label": "收藏" }, { "icon": "trending_up", "label": "成长" }, { "icon": "group_add", "label": "邀请" }, { "icon": "settings", "label": "设置" } ],
+      "selected": 2,
+      "actions": { "tab:0": { "to": "profile", "transition": "fade" }, "tab:1": { "to": "bookmarks", "transition": "fade" }, "tab:3": { "to": "invite", "transition": "fade" }, "tab:4": { "to": "settings", "transition": "fade" } } } ] },
+    { "id": "g-g-level", "x": 1000, "y": 152, "axis": "x", "items": [ { "id": "g-level-text", "kind": "text", "label": "Lv.1 初学乍练", "size": 20, "bold": true, "icon": null, "variant": "filled" } ] },
+    { "id": "g-g-progress", "x": 1000, "y": 196, "axis": "x", "items": [ { "id": "g-progress", "kind": "linearProgress", "label": "", "icon": null, "variant": "filled", "value": 12 } ] },
+    { "id": "g-g-exp", "x": 1000, "y": 232, "axis": "x", "items": [ { "id": "g-exp-text", "kind": "text", "label": "经验 12/100，升级还需 88", "size": 12, "icon": null, "variant": "filled" } ] },
+    { "id": "g-g-ach-h", "x": 1000, "y": 272, "axis": "x", "items": [ { "id": "g-ach-h", "kind": "text", "label": "🏆 成就（已解锁 1/30）", "size": 16, "bold": true, "icon": null, "variant": "filled" } ] },
+    { "id": "g-g-ach-list", "x": 1000, "y": 304, "axis": "y", "items": [
+      { "id": "g-ach-qqw", "kind": "listItem", "label": "全勤王", "supporting": "连续签到 30 天 · 👑 称号「全勤王」·30天 · 🪙 +300 积分", "icon": "emoji_events", "icon2": "check_circle", "variant": "filled" },
+      { "id": "g-ach-cxh", "kind": "listItem", "label": "持之以恒", "supporting": "连续签到 7 天", "icon": "emoji_events", "icon2": "check_circle", "variant": "filled" },
+      { "id": "g-ach-rqw", "kind": "listItem", "label": "人气王", "supporting": "被点赞累计 100 次 · 👑 称号「人气王」·7天 · 🪙 +200 积分", "icon": "favorite", "icon2": "lock", "variant": "filled" },
+      { "id": "g-ach-ou", "kind": "listItem", "label": "欧皇", "supporting": "抽中 SSR 奖品 · 🪙 +100 积分", "icon": "casino", "icon2": "lock", "variant": "filled" }
+    ] },
+    { "id": "g-g-hall", "x": 1000, "y": 640, "axis": "x", "items": [ { "id": "g-hall-btn", "kind": "button", "label": "查看成就殿堂", "icon": "arrow_forward", "variant": "text", "note": "跳转全站成就殿堂页面" } ] },
+
+    { "id": "g-i-appbar", "x": 1476, "y": 0, "axis": "x", "items": [ { "id": "i-appbar", "kind": "topAppBar", "label": "邀请好友", "icon": "arrow_back", "icon2": null, "variant": "filled", "actions": { "icon": { "to": "back" } } } ] },
+    { "id": "g-i-tabs", "x": 1476, "y": 88, "axis": "x", "items": [ { "id": "i-tabs", "kind": "tabs", "label": "", "icon": null, "variant": "filled",
+      "tabs": [ { "icon": "article", "label": "帖子" }, { "icon": "star", "label": "收藏" }, { "icon": "trending_up", "label": "成长" }, { "icon": "group_add", "label": "邀请" }, { "icon": "settings", "label": "设置" } ],
+      "selected": 3,
+      "actions": { "tab:0": { "to": "profile", "transition": "fade" }, "tab:1": { "to": "bookmarks", "transition": "fade" }, "tab:2": { "to": "growth", "transition": "fade" }, "tab:4": { "to": "settings", "transition": "fade" } } } ] },
+    { "id": "g-i-desc", "x": 1492, "y": 156, "axis": "x", "items": [ { "id": "i-desc", "kind": "text", "label": "每邀请一位好友注册成功，你获得 +120 积分", "size": 13, "icon": null, "variant": "filled" } ] },
+    { "id": "g-i-code", "x": 1492, "y": 196, "axis": "x", "items": [ { "id": "i-code", "kind": "listItem", "label": "INV-8F3K2Q", "supporting": "复制邀请链接发送给好友", "icon": "confirmation_number", "icon2": "content_copy", "variant": "filled", "note": "点右侧复制图标复制邀请链接；同时只能有 1 个未使用的邀请码，使用后可再生成" } ] },
+    { "id": "g-i-btn", "x": 1492, "y": 276, "axis": "x", "items": [ { "id": "i-btn", "kind": "button", "label": "生成新的邀请码", "icon": "add", "variant": "filled", "size": 380, "note": "已有可用邀请码时，此按钮替换为「邀请码使用后可再生成」提示" } ] },
+    { "id": "g-i-stats", "x": 1492, "y": 348, "axis": "x", "items": [ { "id": "i-stats", "kind": "text", "label": "已邀请 3 人 · 累计获得 360 积分", "size": 13, "icon": null, "variant": "filled" } ] },
+
+    { "id": "g-s-appbar", "x": 1968, "y": 0, "axis": "x", "items": [ { "id": "s-appbar", "kind": "topAppBar", "label": "设置", "icon": "arrow_back", "icon2": null, "variant": "filled", "actions": { "icon": { "to": "back" } } } ] },
+    { "id": "g-s-tabs", "x": 1968, "y": 88, "axis": "x", "items": [ { "id": "s-tabs", "kind": "tabs", "label": "", "icon": null, "variant": "filled",
+      "tabs": [ { "icon": "article", "label": "帖子" }, { "icon": "star", "label": "收藏" }, { "icon": "trending_up", "label": "成长" }, { "icon": "group_add", "label": "邀请" }, { "icon": "settings", "label": "设置" } ],
+      "selected": 4,
+      "actions": { "tab:0": { "to": "profile", "transition": "fade" }, "tab:1": { "to": "bookmarks", "transition": "fade" }, "tab:2": { "to": "growth", "transition": "fade" }, "tab:3": { "to": "invite", "transition": "fade" } } } ] },
+    { "id": "g-s-vip", "x": 1984, "y": 152, "axis": "x", "items": [ { "id": "s-vip", "kind": "card", "label": "👑 S VIP 会员", "supporting": "查看会员权益 · 有效期至 2026-12-01", "icon": "workspace_premium", "variant": "filled", "noImage": true, "size": 380, "size2": 112, "note": "点击进入 VIP 页；未开通时显示「升级 VIP / 解锁更多特权」" } ] },
+    { "id": "g-s-profile-h", "x": 1984, "y": 284, "axis": "x", "items": [ { "id": "s-profile-h", "kind": "text", "label": "账号资料", "size": 16, "bold": true, "icon": null, "variant": "filled" } ] },
+    { "id": "g-s-profile", "x": 1984, "y": 316, "axis": "y", "items": [
+      { "id": "s-user", "kind": "listItem", "label": "用户名", "supporting": "小舟", "icon": "person", "icon2": "edit", "variant": "filled", "note": "点击后行内编辑用户名并保存" },
+      { "id": "s-bio", "kind": "listItem", "label": "个人简介", "supporting": "热爱折腾与分享 🌱", "icon": "notes", "icon2": "edit", "variant": "filled", "note": "点击编辑简介（500 字以内）" },
+      { "id": "s-mail", "kind": "listItem", "label": "邮箱", "supporting": "ach@example.invalid · 更换邮箱需验证新邮箱", "icon": "mail", "icon2": "chevron_right", "variant": "filled", "note": "点击跳转更换邮箱页（验证新邮箱后换绑）" }
+    ] },
+    { "id": "g-s-sec-h", "x": 1984, "y": 552, "axis": "x", "items": [ { "id": "s-sec-h", "kind": "text", "label": "安全", "size": 16, "bold": true, "icon": null, "variant": "filled" } ] },
+    { "id": "g-s-sec", "x": 1984, "y": 584, "axis": "y", "items": [
+      { "id": "s-pass", "kind": "listItem", "label": "修改密码", "supporting": "验证当前密码后设置新密码", "icon": "key", "icon2": "chevron_right", "variant": "filled", "note": "跳转独立的修改密码页；忘记原密码可走绑定邮箱重置（已登录时邮箱锁定为绑定邮箱）" },
+      { "id": "s-logout", "kind": "listItem", "label": "退出登录", "icon": "logout", "icon2": "chevron_right", "variant": "filled", "note": "弹出确认框，确认后登出并回首页" },
+      { "id": "s-del", "kind": "listItem", "label": "注销账户", "supporting": "3 天冷静期，需密码验证", "icon": "delete_forever", "icon2": "chevron_right", "variant": "filled", "note": "打开右侧三步注销流程弹窗" }
+    ] },
+    { "id": "g-s-dialog-del", "x": 2068, "y": 336, "axis": "x", "items": [ { "id": "s-dialog-del", "kind": "dialog", "label": "确认注销账户", "supporting": "第 1 步确认 → 第 2 步密码验证 → 第 3 步 5 秒冷静倒计时后提交。提交后账户进入 3 天冷静期，期间可随时取消注销", "icon": "warning" } ] }
+  ]
+}
