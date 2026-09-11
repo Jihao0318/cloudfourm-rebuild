@@ -1,0 +1,220 @@
+{
+  "title": "CloudForum 个人主页",
+  "brief": "论坛个人主页：资料头、五个 Tab（帖子/收藏/成长/邀请/设置）与 VIP 入口；他人主页仅见帖子。",
+  "frame": "phone",
+  "platform": "android",
+  "paletteKey": "blue",
+  "theme": { "dark": false, "bothModes": true, "contrast": "standard", "shape": "rounded", "font": "roboto", "emphasized": false, "motion": "expressive" },
+  "frames": [
+    { "id": "profile", "name": "我的主页 · 帖子", "x": 0, "y": 0, "note": "自己的个人主页，默认『帖子』tab。顶部全局消息条：操作反馈 绿=成功 / 红=失败，同一时刻一条，3 秒自动消失。资料未就绪整页骨架屏；用户不存在/加载失败显示独立错误卡（返回首页）。Tab 下方 VIP 入口卡当前实现不随 tab 切换。帖子列表每页 10 条。封禁时用户名旁显示『已封禁』徽章，点击展开封禁至时间/原因，自己可提交解封申请（扣 500 积分保证金，通过不退、失败全退）。", "place": "top" },
+    { "id": "fav", "name": "我的主页 · 收藏", "x": 492, "y": 0, "note": "收藏 tab（仅自己可见）：进入 tab 且列表为空时懒加载 GET /bookmarks?page=。空态『暂无收藏 · 去首页看看有没有感兴趣的帖子』。每页 20 条。", "place": "top" },
+    { "id": "growth", "name": "我的主页 · 成长", "x": 984, "y": 0, "note": "成长 tab（仅自己可见）：区块 A 等级进度（按当前等级内经验百分比填充，满级显示『已满级』）；区块 B 成就可折叠，加载中 / 失败可『重试』，数据挂载时+切到本 tab 时刷新 GET /achievements。", "place": "top" },
+    { "id": "invite", "name": "我的主页 · 邀请", "x": 1476, "y": 0, "note": "邀请 tab（仅自己可见）：单张绿色卡片。无可用码时右上角生成（POST /auth/invites，生成后本地立即插入再后台静默校准）；有码文案『邀请码使用后可再生成』；空态『还没有邀请码，点击右上角生成一个分享给好友吧』。", "place": "top" },
+    { "id": "settings", "name": "我的主页 · 设置", "x": 1968, "y": 0, "note": "设置 tab（仅自己可见），现拆两张卡：编辑资料 + 安全设置。注销三步流程（警告+3 天冷静期 → 输密码验证 → 5 秒倒计时后确认），已提交改为黄色卡『账户注销待处理 + 倒计时 + 取消注销』。管理后台入口仅管理员/巡查员可见。桌面 md+ 双列：左=修改密码，右=管理/退出/注销。", "place": "top" },
+    { "id": "other", "name": "他人主页", "x": 2460, "y": 0, "note": "他人主页：仅『帖子』tab（收藏/成长/邀请/设置只自己可见）。+关注仅他人主页且已登录、已关注变灰；未登录访客不显示关注按钮，点击未登录跳登录并带 from 回跳。用户不存在/加载失败→错误卡+返回首页。", "place": "top" }
+  ],
+  "groups": [
+    { "id": "g_p_bar", "x": 0, "y": 0, "axis": "x", "items": [
+      { "id": "p_bar", "kind": "topAppBar", "label": "我的主页", "icon": "arrow_back", "variant": "filled" }
+    ] },
+    { "id": "g_p_banner", "x": 16, "y": 96, "axis": "x", "items": [
+      { "id": "p_banner", "kind": "box", "label": "", "icon": null, "variant": "filled", "size": 380, "size2": 158, "fill": "primaryContainer", "radiusTop": 24, "note": "背景区 5:2，无图时品牌渐变底；点击放大预览（Lightbox，最大 3 倍缩放）。仅自己可『更换背景』：裁剪 5:2、导出 ≤2048px、压缩上传（PUT /users/banner，走 POST /upload/image 后的裁剪链路）。" }
+    ] },
+    { "id": "g_p_bgbtn", "x": 280, "y": 222, "axis": "x", "items": [
+      { "id": "p_bgbtn", "kind": "chip", "label": "更换背景", "icon": "photo_camera", "variant": "filled", "note": "仅自己可见，浮动于背景图右下；点击进入裁剪弹窗，上传中显示遮罩（转圈 + 上传中…）。" }
+    ] },
+    { "id": "g_p_avatar", "x": 40, "y": 230, "axis": "x", "items": [
+      { "id": "p_avatar", "kind": "image", "label": "", "icon": null, "variant": "filled", "size": 96, "note": "圆形 + 白色 ring + 头像框，压在背景图下方；点击放大预览；右下角『+』（仅自己）跳头像裁剪弹窗（1:1，导出 ≤1024px，压缩上传）。" }
+    ] },
+    { "id": "g_p_name", "x": 40, "y": 332, "axis": "x", "items": [
+      { "id": "p_name", "kind": "text", "label": "墨色琉璃", "icon": null, "variant": "filled", "size": 24, "bold": true }
+    ] },
+    { "id": "g_p_badges", "x": 40, "y": 372, "axis": "x", "items": [
+      { "id": "p_badge1", "kind": "chip", "label": "VIP", "icon": "workspace_premium", "variant": "filled", "note": "VIP 徽章按等级（VIP / S VIP / S VIP+），昵称带渐变主题；另有 Lv.N 称号、称号徽章（title_badge 有过期时间）、管理员（红）/巡查员（黄）角色标。" },
+      { "id": "p_badge2", "kind": "chip", "label": "Lv.6 渐入佳境", "icon": null, "variant": "filled" },
+      { "id": "p_badge3", "kind": "chip", "label": "人气王", "icon": "military_tech", "variant": "filled" }
+    ] },
+    { "id": "g_p_bio", "x": 40, "y": 412, "axis": "x", "items": [
+      { "id": "p_bio", "kind": "text", "label": "记录前端与设计系统的心得，主攻 Material 3 与 Web 性能。", "icon": null, "variant": "filled", "size": 16 }
+    ] },
+    { "id": "g_p_meta", "x": 40, "y": 440, "axis": "x", "items": [
+      { "id": "p_meta", "kind": "text", "label": "注册于 2024/03 · 12 篇帖子", "icon": null, "variant": "filled", "size": 14 }
+    ] },
+    { "id": "g_p_tabs", "x": 0, "y": 468, "axis": "x", "items": [
+      { "id": "p_tabs", "kind": "tabs", "label": "", "icon": null, "variant": "filled", "tabs": [ { "label": "帖子" }, { "label": "收藏" }, { "label": "成长" }, { "label": "邀请" }, { "label": "设置" } ], "selected": 0, "actions": { "tab:1": { "to": "fav", "transition": "fade" }, "tab:2": { "to": "growth", "transition": "fade" }, "tab:3": { "to": "invite", "transition": "fade" }, "tab:4": { "to": "settings", "transition": "fade" } } }
+    ] },
+    { "id": "g_p_vip", "x": 16, "y": 524, "axis": "x", "items": [
+      { "id": "p_vip", "kind": "card", "label": "VIP 会员", "supporting": "查看会员权益 · 解锁更多特权", "icon": "workspace_premium", "variant": "filled", "size": 380, "size2": 68, "noImage": true, "note": "已开通文案『VIP/S VIP/S VIP+ 会员 · 查看会员权益』；未开通『升级 VIP · 解锁更多特权』，点击进入 /vip。当前实现该卡不随 tab 切换、任何 tab 都在（位置易被误认为 tab 内容，设计时可重排）。" }
+    ] },
+    { "id": "g_p_list_t", "x": 16, "y": 600, "axis": "x", "items": [
+      { "id": "p_posts_title", "kind": "text", "label": "帖子 (12)", "icon": null, "variant": "filled", "size": 20, "bold": true }
+    ] },
+    { "id": "g_p_list", "x": 16, "y": 636, "axis": "y", "items": [
+      { "id": "p_post1", "kind": "listItem", "label": "用 Material 3 重做个人主页的思路", "supporting": "前端 · 3 天前 · 浏览 1.2k · 评论 18 · 赞 56", "icon": "article", "variant": "filled", "note": "点击进 /post/:id；标题单行截断。行内 6 项信息偏挤（分类/相对时间/今日运势/浏览/评论/赞），设计时可重排。加载中骨架屏 3 条；空态自己『你还没有发过帖子』/他人『该用户还没有发过帖子』。每页 10 条。" },
+      { "id": "p_post2", "kind": "listItem", "label": "暗号 · 社区隐藏任务的挖法", "supporting": "闲聊 · 5 天前 · 浏览 860 · 评论 12 · 赞 30", "icon": "article", "variant": "filled" }
+    ] },
+    { "id": "g_p_page", "x": 16, "y": 788, "axis": "x", "items": [
+      { "id": "p_prev", "kind": "button", "label": "上一页", "icon": "chevron_left", "variant": "text", "note": "分页器『← 上一页 n/N 下一页 →』，总页数 >1 才显示；数据 GET /posts?userId=&page=&pageSize=10（total 用于标题与分页）。" },
+      { "id": "p_next", "kind": "button", "label": "下一页", "icon": "chevron_right", "variant": "text" }
+    ] },
+    { "id": "g_p_page_no", "x": 140, "y": 802, "axis": "x", "items": [
+      { "id": "p_counter", "kind": "text", "label": "1 / 2", "icon": null, "variant": "filled", "size": 14 }
+    ] },
+
+    { "id": "g_f_bar", "x": 492, "y": 0, "axis": "x", "items": [
+      { "id": "f_bar", "kind": "topAppBar", "label": "收藏", "icon": "arrow_back", "variant": "filled" }
+    ] },
+    { "id": "g_f_tabs", "x": 492, "y": 96, "axis": "x", "items": [
+      { "id": "f_tabs", "kind": "tabs", "label": "", "icon": null, "variant": "filled", "tabs": [ { "label": "帖子" }, { "label": "收藏" }, { "label": "成长" }, { "label": "邀请" }, { "label": "设置" } ], "selected": 1, "actions": { "tab:0": { "to": "profile", "transition": "fade" }, "tab:2": { "to": "growth", "transition": "fade" }, "tab:3": { "to": "invite", "transition": "fade" }, "tab:4": { "to": "settings", "transition": "fade" } } }
+    ] },
+    { "id": "g_f_title", "x": 508, "y": 160, "axis": "x", "items": [
+      { "id": "f_title", "kind": "text", "label": "收藏 (6)", "icon": null, "variant": "filled", "size": 20, "bold": true }
+    ] },
+    { "id": "g_f_list", "x": 508, "y": 196, "axis": "y", "items": [
+      { "id": "f_f1", "kind": "listItem", "label": "M3 动态色的落地问题", "supporting": "山风 · 评论 24 · 赞 130", "icon": "bookmark", "variant": "filled", "note": "收藏项点进 /post/:id；样式与帖子列表不同（作者+评论/点赞 vs 分类+浏览/评论/赞），设计时可统一。" },
+      { "id": "f_f2", "kind": "listItem", "label": "城市咖啡馆地图 V2", "supporting": "阿澈 · 评论 8 · 赞 42", "icon": "bookmark", "variant": "filled" },
+      { "id": "f_f3", "kind": "listItem", "label": "周末去哪儿 · 城市徒步路线", "supporting": "澜 · 评论 31 · 赞 210", "icon": "bookmark", "variant": "filled" }
+    ] },
+    { "id": "g_f_page", "x": 508, "y": 430, "axis": "x", "items": [
+      { "id": "f_prev", "kind": "button", "label": "上一页", "icon": "chevron_left", "variant": "text" },
+      { "id": "f_next", "kind": "button", "label": "下一页", "icon": "chevron_right", "variant": "text" }
+    ] },
+    { "id": "g_f_page_no", "x": 632, "y": 444, "axis": "x", "items": [
+      { "id": "f_counter", "kind": "text", "label": "1 / 2", "icon": null, "variant": "filled", "size": 14 }
+    ] },
+
+    { "id": "g_gr_bar", "x": 984, "y": 0, "axis": "x", "items": [
+      { "id": "gr_bar", "kind": "topAppBar", "label": "成长", "icon": "arrow_back", "variant": "filled" }
+    ] },
+    { "id": "g_gr_tabs", "x": 984, "y": 96, "axis": "x", "items": [
+      { "id": "gr_tabs", "kind": "tabs", "label": "", "icon": null, "variant": "filled", "tabs": [ { "label": "帖子" }, { "label": "收藏" }, { "label": "成长" }, { "label": "邀请" }, { "label": "设置" } ], "selected": 2, "actions": { "tab:0": { "to": "profile", "transition": "fade" }, "tab:1": { "to": "fav", "transition": "fade" }, "tab:3": { "to": "invite", "transition": "fade" }, "tab:4": { "to": "settings", "transition": "fade" } } }
+    ] },
+    { "id": "g_gr_head", "x": 1000, "y": 160, "axis": "x", "items": [
+      { "id": "gr_title", "kind": "text", "label": "成长", "icon": null, "variant": "filled", "size": 20, "bold": true }
+    ] },
+    { "id": "g_gr_lv", "x": 1170, "y": 168, "axis": "x", "items": [
+      { "id": "gr_lv", "kind": "text", "label": "Lv.6 渐入佳境", "icon": null, "variant": "filled", "size": 16 }
+    ] },
+    { "id": "g_gr_prog", "x": 1000, "y": 200, "axis": "x", "items": [
+      { "id": "gr_progress", "kind": "linearProgress", "label": "", "icon": null, "variant": "filled", "value": 65, "note": "进度 = 当前等级内经验百分比；满级显示『已满级』。" }
+    ] },
+    { "id": "g_gr_exp", "x": 1000, "y": 232, "axis": "x", "items": [
+      { "id": "gr_exp", "kind": "text", "label": "经验 650 / 1000 · 升级还需 350 经验", "icon": null, "variant": "filled", "size": 14 }
+    ] },
+    { "id": "g_gr_ach", "x": 1000, "y": 280, "axis": "x", "items": [
+      { "id": "gr_ach_t", "kind": "text", "label": "成就", "icon": null, "variant": "filled", "size": 20, "bold": true, "note": "标题行点击折叠/展开；加载中显示『加载中』，失败显示『重试』按钮。" }
+    ] },
+    { "id": "g_gr_ach_st", "x": 1140, "y": 288, "axis": "x", "items": [
+      { "id": "gr_ach_st", "kind": "text", "label": "已解锁 4 / 8 · 查看成就殿堂 →", "icon": null, "variant": "filled", "size": 14, "note": "跳 /achievements；成就数据 GET /achievements（挂载 + 切到本 tab 时刷新）。" }
+    ] },
+    { "id": "g_gr_grid1", "x": 1000, "y": 322, "axis": "x", "items": [
+      { "id": "gr_a1", "kind": "card", "label": "码字狂魔", "supporting": "连续 100 天发帖", "icon": "edit", "variant": "filled", "size": 182, "size2": 96, "noImage": true, "note": "已解锁（实底显示、排序优先）；奖励：+200 积分。成就网格 2 列 / 桌面 3 列。" },
+      { "id": "gr_a2", "kind": "card", "label": "人气王", "supporting": "单帖获 1000 赞", "icon": "military_tech", "variant": "filled", "size": 182, "size2": 96, "noImage": true, "note": "奖励：称号『人气王』· 7 天。" }
+    ] },
+    { "id": "g_gr_grid2", "x": 1000, "y": 426, "axis": "x", "items": [
+      { "id": "gr_a3", "kind": "card", "label": "早起鸟儿", "supporting": "8 点前发帖 30 次", "icon": "wb_sunny", "variant": "filled", "size": 182, "size2": 96, "noImage": true, "note": "奖励：+50 经验。" },
+      { "id": "gr_a4", "kind": "card", "label": "光影收藏家", "supporting": "发布 10 张高清背景", "icon": "lock", "variant": "filled", "size": 182, "size2": 96, "noImage": true, "note": "未解锁：灰显 + 底部奖励标签（奖励：头像框 · 30 天）；排序已解锁优先。" }
+    ] },
+
+    { "id": "g_i_bar", "x": 1476, "y": 0, "axis": "x", "items": [
+      { "id": "i_bar", "kind": "topAppBar", "label": "邀请好友", "icon": "arrow_back", "icon2": "add", "variant": "filled", "note": "右上角：无可用码时『生成邀请码』（POST /auth/invites，生成后本地立即插入、后台静默校准）；有码时该位置文案为『邀请码使用后可再生成』。" }
+    ] },
+    { "id": "g_i_tabs", "x": 1476, "y": 96, "axis": "x", "items": [
+      { "id": "i_tabs", "kind": "tabs", "label": "", "icon": null, "variant": "filled", "tabs": [ { "label": "帖子" }, { "label": "收藏" }, { "label": "成长" }, { "label": "邀请" }, { "label": "设置" } ], "selected": 3, "actions": { "tab:0": { "to": "profile", "transition": "fade" }, "tab:1": { "to": "fav", "transition": "fade" }, "tab:2": { "to": "growth", "transition": "fade" }, "tab:4": { "to": "settings", "transition": "fade" } } }
+    ] },
+    { "id": "g_i_card", "x": 1492, "y": 156, "axis": "x", "items": [
+      { "id": "i_card", "kind": "card", "label": "邀请好友", "supporting": "每邀请一位好友注册成功，你获得 +120 积分 · 同时只能有 1 个邀请码，使用后可再生成", "icon": "group_add", "variant": "filled", "fill": "secondaryContainer", "size": 380, "size2": 120, "noImage": true, "note": "独立绿色卡片，与整页白卡风格不统一（现状，设计时可统一）。无码时按钮『+ 生成邀请码』；空态『还没有邀请码，点击右上角生成一个分享给好友吧』。" }
+    ] },
+    { "id": "g_i_code", "x": 1492, "y": 288, "axis": "x", "items": [
+      { "id": "i_code", "kind": "listItem", "label": "INV-8F7K2Q", "supporting": "邀请码使用后可再生成", "icon": "tag", "icon2": "content_copy", "variant": "filled", "note": "等宽字体展示；操作：复制 / 复制邀请链接 {origin}/invite/{code}；复制后顶部绿条反馈。列表来自 GET /auth/invites。" }
+    ] },
+    { "id": "g_i_stat", "x": 1492, "y": 376, "axis": "x", "items": [
+      { "id": "i_stat", "kind": "text", "label": "已邀请 3 人 · 累计获得 360 积分", "icon": null, "variant": "filled", "size": 14 }
+    ] },
+    { "id": "g_i_snack", "x": 1510, "y": 780, "axis": "x", "items": [
+      { "id": "i_snack", "kind": "snackbar", "label": "邀请链接已复制", "supporting": "", "variant": "filled" }
+    ] },
+
+    { "id": "g_s_bar", "x": 1968, "y": 0, "axis": "x", "items": [
+      { "id": "s_bar", "kind": "topAppBar", "label": "设置", "icon": "arrow_back", "variant": "filled" }
+    ] },
+    { "id": "g_s_tabs", "x": 1968, "y": 96, "axis": "x", "items": [
+      { "id": "s_tabs", "kind": "tabs", "label": "", "icon": null, "variant": "filled", "tabs": [ { "label": "帖子" }, { "label": "收藏" }, { "label": "成长" }, { "label": "邀请" }, { "label": "设置" } ], "selected": 4, "actions": { "tab:0": { "to": "profile", "transition": "fade" }, "tab:1": { "to": "fav", "transition": "fade" }, "tab:2": { "to": "growth", "transition": "fade" }, "tab:3": { "to": "invite", "transition": "fade" } } }
+    ] },
+    { "id": "g_s_h1", "x": 1984, "y": 152, "axis": "x", "items": [
+      { "id": "s_h1", "kind": "text", "label": "编辑资料", "icon": null, "variant": "filled", "size": 20, "bold": true }
+    ] },
+    { "id": "g_s_emailw", "x": 1984, "y": 184, "axis": "x", "items": [
+      { "id": "s_emailw", "kind": "listItem", "label": "邮箱尚未验证", "supporting": "发送验证码 / 我已收到验证码", "icon": "mark_email_unread", "variant": "filled", "note": "黄色提示条（仅 email_verified=0）；『我已收到验证码』展开 6 位验证码输入 + 验证（POST /auth/email/resend、verify-register）。本区块下方另行显示当前邮箱，『更换邮箱』跳 /change-email（当前实现已改独立页面）。" }
+    ] },
+    { "id": "g_s_user", "x": 1984, "y": 264, "axis": "x", "items": [
+      { "id": "s_user", "kind": "textField", "label": "用户名", "icon": null, "variant": "filled", "size": 284, "note": "保存走 POST /auth/username。" }
+    ] },
+    { "id": "g_s_save_user", "x": 2276, "y": 272, "axis": "x", "items": [
+      { "id": "s_save_user", "kind": "button", "label": "保存", "icon": "check", "variant": "filled" }
+    ] },
+    { "id": "g_s_bio", "x": 1984, "y": 328, "axis": "x", "items": [
+      { "id": "s_bio", "kind": "textField", "label": "个人简介", "supporting": "≤ 500 字，保存后展示在主页", "icon": null, "variant": "filled", "size": 380, "note": "保存简介：PUT /users/profile。" }
+    ] },
+    { "id": "g_s_honor", "x": 1984, "y": 408, "axis": "x", "items": [
+      { "id": "s_honor", "kind": "textField", "label": "自定义头衔", "icon": null, "variant": "filled", "size": 284, "note": "仅 VIP 可见，≤30 字，有过期判断；PUT /users/title。" }
+    ] },
+    { "id": "g_s_save_honor", "x": 2276, "y": 416, "axis": "x", "items": [
+      { "id": "s_save_honor", "kind": "button", "label": "保存", "icon": "check", "variant": "filled" }
+    ] },
+    { "id": "g_s_theme_h", "x": 1984, "y": 480, "axis": "x", "items": [
+      { "id": "s_theme_h", "kind": "text", "label": "昵称主题（S VIP+ 专属）", "icon": null, "variant": "filled", "size": 16, "note": "4 个渐变色主题按钮（红金 / 紫粉 / 蓝紫 / 绿金）+『保存主题』+『有未保存的更改』提示 + 预览区。" }
+    ] },
+    { "id": "g_s_theme", "x": 1984, "y": 516, "axis": "x", "items": [
+      { "id": "s_th1", "kind": "button", "label": "红金", "icon": null, "variant": "filled" },
+      { "id": "s_th2", "kind": "button", "label": "紫粉", "icon": null, "variant": "filled" },
+      { "id": "s_th3", "kind": "button", "label": "蓝紫", "icon": null, "variant": "filled" },
+      { "id": "s_th4", "kind": "button", "label": "绿金", "icon": null, "variant": "filled" }
+    ] },
+    { "id": "g_s_h2", "x": 1984, "y": 588, "axis": "x", "items": [
+      { "id": "s_h2", "kind": "text", "label": "安全设置", "icon": null, "variant": "filled", "size": 20, "bold": true }
+    ] },
+    { "id": "g_s_account", "x": 1984, "y": 620, "axis": "x", "items": [
+      { "id": "s_a1", "kind": "listItem", "label": "修改密码", "supporting": "定期更换密码更安全", "icon": "key", "variant": "filled", "note": "点击跳 /change-password。" },
+      { "id": "s_a2", "kind": "listItem", "label": "退出当前账号", "supporting": "二次确认后清会话并回首页", "icon": "logout", "variant": "filled" },
+      { "id": "s_a3", "kind": "listItem", "label": "注销账户", "supporting": "3 天冷静期 · 三步确认流程", "icon": "person_remove", "variant": "filled", "note": "①警告+3 天冷静期 → ②输入密码验证（POST /auth/verify-password）→ ③5 秒冷静倒计时后『确认提交』（POST /auth/account），提交后提示并登出；若已提交：黄色卡『账户注销待处理 · 将在 X天Y小时 后自动注销』+『取消注销』（POST /auth/cancel-deletion）。管理后台入口仅管理员/巡查员可见，跳 /admin。" }
+    ] },
+
+    { "id": "g_o_bar", "x": 2460, "y": 0, "axis": "x", "items": [
+      { "id": "o_bar", "kind": "topAppBar", "label": "棠梨煎雪", "icon": "arrow_back", "variant": "filled", "note": "标题 = 被查看的 {用户名}；页面 title `{用户名} - CloudForum`。" }
+    ] },
+    { "id": "g_o_banner", "x": 2476, "y": 96, "axis": "x", "items": [
+      { "id": "o_banner", "kind": "box", "label": "", "icon": null, "variant": "filled", "size": 380, "size2": 158, "fill": "primaryContainer", "radiusTop": 24, "note": "背景图 5:2，点击放大预览；他人主页无『更换背景』按钮。" }
+    ] },
+    { "id": "g_o_avatar", "x": 2500, "y": 230, "axis": "x", "items": [
+      { "id": "o_avatar", "kind": "image", "label": "", "icon": null, "variant": "filled", "size": 96, "note": "点击放大预览；他人头像无『+』按钮。" }
+    ] },
+    { "id": "g_o_name", "x": 2500, "y": 332, "axis": "x", "items": [
+      { "id": "o_name", "kind": "text", "label": "棠梨煎雪", "icon": null, "variant": "filled", "size": 24, "bold": true }
+    ] },
+    { "id": "g_o_follow", "x": 2500, "y": 392, "axis": "x", "items": [
+      { "id": "o_follow", "kind": "button", "label": "关注", "icon": "person_add", "variant": "filled", "note": "仅他人主页且已登录；已关注变灰（POST /follows/:id/toggle）；未登录访客不显示，未登录点击跳登录并带 from=/user/:id 回跳。" }
+    ] },
+    { "id": "g_o_badges", "x": 2500, "y": 452, "axis": "x", "items": [
+      { "id": "o_b1", "kind": "chip", "label": "Lv.9 炉火纯青", "icon": null, "variant": "filled" },
+      { "id": "o_b2", "kind": "chip", "label": "热心站务", "icon": null, "variant": "filled", "note": "按实际显示 VIP / Lv.称号 / 称号徽章 / 管理员（红）· 巡查员（黄）角色标；他人页不显示封禁详情。" }
+    ] },
+    { "id": "g_o_tabs", "x": 2460, "y": 516, "axis": "x", "items": [
+      { "id": "o_tabs", "kind": "tabs", "label": "", "icon": null, "variant": "filled", "tabs": [ { "label": "帖子" } ], "selected": 0, "note": "他人主页仅『帖子』tab（收藏/成长/邀请/设置只自己可见）。" }
+    ] },
+    { "id": "g_o_title", "x": 2476, "y": 584, "axis": "x", "items": [
+      { "id": "o_title", "kind": "text", "label": "帖子 (28)", "icon": null, "variant": "filled", "size": 20, "bold": true }
+    ] },
+    { "id": "g_o_list", "x": 2476, "y": 620, "axis": "y", "items": [
+      { "id": "o_p1", "kind": "listItem", "label": "我的城市咖啡馆地图 V2", "supporting": "生活 · 2 个月前 · 浏览 2.4k · 评论 56 · 赞 310", "icon": "article", "variant": "filled", "note": "空态：他人『该用户还没有发过帖子』；每页 10 条。" },
+      { "id": "o_p2", "kind": "listItem", "label": "写给新手的暗号收集指南", "supporting": "攻略 · 4 个月前 · 浏览 1.8k · 评论 40 · 赞 220", "icon": "article", "variant": "filled" }
+    ] },
+    { "id": "g_o_page", "x": 2476, "y": 780, "axis": "x", "items": [
+      { "id": "o_prev", "kind": "button", "label": "上一页", "icon": "chevron_left", "variant": "text" },
+      { "id": "o_next", "kind": "button", "label": "下一页", "icon": "chevron_right", "variant": "text" }
+    ] },
+    { "id": "g_o_page_no", "x": 2600, "y": 794, "axis": "x", "items": [
+      { "id": "o_counter", "kind": "text", "label": "2 / 3", "icon": null, "variant": "filled", "size": 14 }
+    ] }
+  ]
+}
