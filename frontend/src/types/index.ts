@@ -85,7 +85,8 @@ export interface Post {
   requires?: { type: string; price?: number };
   // 帖子背景 / 感谢 / 红包（列表字段）
   post_bg_id?: number | null;
-  effects_managed_at?: string | null; // 效果管理一次性机会（非空=已使用）
+  effects_managed_at?: string | null; // 首次使用效果管理的时间（非空=至少用过一次）
+  effects_used_kinds?: string | null; // 已使用过效果管理的种类，逗号分隔（bg,bump,highlight,fortune），每帖最多 2 种
   thanks_count?: number;
   author_exp?: number | null;
   red_packet_coins?: number | null;

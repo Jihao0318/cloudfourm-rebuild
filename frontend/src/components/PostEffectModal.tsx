@@ -16,16 +16,11 @@ const DECO_DETAILS: Record<string, string> = {
   item_highlight: '· 帖子在主页列表显示金色高亮背景与左侧色条\n· 持续 24 小时，到期自动恢复普通样式\n· 在「仓库」中选择帖子使用\n· 仅自己的帖子可用',
 };
 
-// 效果额度：同一帖子最多同时生效 2 种效果（与后端 worker/src/handlers/items.ts 的
-// effectQuotaError 同规则）。同类效果续期/替换（换背景、推荐卡续费、高亮叠加）不占新额度，
-// 取消效果立即释放额度；旧的「每帖仅一次」一次性标记已废弃。
+// 效果管理次数：每个帖子最多 MAX_POST_EFFECTS 次（4 种效果里最多选 2 种）。
+// 次数由后端记录在 posts.effects_used_kinds（已用过的种类，逗号分隔）：
+// 同类效果的续期/替换不重复计数，取消效果不回退次数。
 const MAX_POST_EFFECTS = 2;
 const EFFECT_LABELS: Record<string, string> = { bg: '帖子背景', bump: '推荐卡', highlight: '高亮卡', fortune: '今日运势' };
-
-function isEffectActive(value: string | null | undefined): boolean {
-  const d = parseDate(value);
-  return !!d && d.getTime() > Date.now();
-}
 
 interface Props {
   open: boolean;
@@ -72,13 +67,12 @@ export default function PostEffectModal({ open, post, onClose, onChanged }: Prop
 
   if (!open || !post) return null;
 
-  // 效果额度：按当前生效的效果种类实时统计（旧的「一次性机会」标记已废弃，不再据此隐藏界面）
-  const activeKinds: string[] = [];
-  if (post.post_bg_id) activeKinds.push('bg');
-  if (isEffectActive(post.bumped_until)) activeKinds.push('bump');
-  if (isEffectActive(post.highlighted_until)) activeKinds.push('highlight');
-  if (isEffectActive(post.fortune_expires_at)) activeKinds.push('fortune');
-  const remaining = Math.max(0, MAX_POST_EFFECTS - activeKinds.length);
+  // 效果管理次数：已使用过的种类由后端返回（effects_used_kinds，逗号分隔）
+  const usedKinds = (post.effects_used_kinds || '')
+    .split(',')
+    .map(k => k.trim())
+    .filter(k => !!EFFECT_LABELS[k]);
+  const remaining = Math.max(0, MAX_POST_EFFECTS - usedKinds.length);
   const quotaFull = remaining === 0;
   const cardCount = (type: string) => cards.find(c => c.type === type)?.count || 0;
 
@@ -117,21 +111,21 @@ export default function PostEffectModal({ open, post, onClose, onChanged }: Prop
         </div>
 
         <div className="p-5 space-y-5">
-          {/* 效果额度计数器：剩余次数 / 已生效效果 / 是否还能管理 */}
+          {/* 效果管理次数计数器：剩余次数 / 已用过的效果 / 是否还能管理 */}
           <div className={`text-xs px-3 py-2 rounded-lg space-y-1 ${
             quotaFull
               ? 'bg-amber-50 dark:bg-amber-950/40 text-amber-600 dark:text-amber-300'
               : 'bg-blue-50 dark:bg-blue-950/40 text-blue-600 dark:text-blue-300'
           }`}>
             <div className="flex items-center justify-between font-semibold">
-              <span>效果额度</span>
+              <span>效果管理次数</span>
               <span>剩余 {remaining}/{MAX_POST_EFFECTS}</span>
             </div>
-            <div>已生效：{activeKinds.length ? activeKinds.map(k => EFFECT_LABELS[k]).join('、') : '无'}</div>
+            <div>已使用：{usedKinds.length ? usedKinds.map(k => EFFECT_LABELS[k]).join('、') : '无'}</div>
             <div className="opacity-80">
               {quotaFull
-                ? `已用满 ${MAX_POST_EFFECTS} 种效果，取消一个已生效效果即可继续管理。`
-                : `每个帖子最多同时生效 ${MAX_POST_EFFECTS} 种效果，还能再添加 ${remaining} 种。`}
+                ? `已用完 ${MAX_POST_EFFECTS} 次效果管理机会，不可再修改。`
+                : `每个帖子最多使用 ${MAX_POST_EFFECTS} 次效果管理（帖子背景/推荐卡/高亮卡/今日运势里最多选 ${MAX_POST_EFFECTS} 种），还可使用 ${remaining} 次。`}
             </div>
           </div>
 
