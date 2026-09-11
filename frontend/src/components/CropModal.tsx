@@ -6,26 +6,36 @@ import type { Area, Point } from 'react-easy-crop';
 interface CropModalProps {
   file: File;
   aspect: number;
+  /** 导出图最长边上限（如头像 1024、背景 2048）：原图多大就导多大纯属浪费带宽 */
+  maxOutputSize?: number;
   onCrop: (blob: Blob) => void;
   onCancel: () => void;
 }
 
 // 将裁剪结果导出为 Blob
-function getCroppedBlob(imageSrc: string, pixelCrop: Area): Promise<Blob> {
+function getCroppedBlob(imageSrc: string, pixelCrop: Area, maxOutputSize?: number): Promise<Blob> {
   return new Promise((resolve, reject) => {
     const img = new Image();
     img.onload = () => {
+      // 超出上限时按最长边等比缩小，其余情况保持裁剪区原始像素
+      let outW = pixelCrop.width;
+      let outH = pixelCrop.height;
+      if (maxOutputSize && Math.max(outW, outH) > maxOutputSize) {
+        const s = maxOutputSize / Math.max(outW, outH);
+        outW = Math.max(1, Math.round(outW * s));
+        outH = Math.max(1, Math.round(outH * s));
+      }
       const canvas = document.createElement('canvas');
-      canvas.width = pixelCrop.width;
-      canvas.height = pixelCrop.height;
+      canvas.width = outW;
+      canvas.height = outH;
       const ctx = canvas.getContext('2d');
       if (!ctx) { reject(new Error('Canvas 2D not supported')); return; }
       // 导出固定为 JPEG（无透明通道），先铺白底，否则 PNG 的透明区域会变成黑块
       ctx.fillStyle = '#fff';
-      ctx.fillRect(0, 0, pixelCrop.width, pixelCrop.height);
+      ctx.fillRect(0, 0, outW, outH);
       ctx.drawImage(
         img, pixelCrop.x, pixelCrop.y, pixelCrop.width, pixelCrop.height,
-        0, 0, pixelCrop.width, pixelCrop.height
+        0, 0, outW, outH
       );
       canvas.toBlob(blob => {
         if (blob) resolve(blob);
@@ -37,7 +47,7 @@ function getCroppedBlob(imageSrc: string, pixelCrop: Area): Promise<Blob> {
   });
 }
 
-export default function CropModal({ file, aspect, onCrop, onCancel }: CropModalProps) {
+export default function CropModal({ file, aspect, maxOutputSize, onCrop, onCancel }: CropModalProps) {
   useEffect(() => { document.body.style.overflow = 'hidden'; return () => { document.body.style.overflow = ''; }; }, []);
 
   // object URL 随文件只创建一次、卸载时释放：写在渲染里会导致每次重渲染都新建地址，
@@ -68,7 +78,7 @@ export default function CropModal({ file, aspect, onCrop, onCancel }: CropModalP
     setError('');
     setBusy(true);
     try {
-      const blob = await getCroppedBlob(image, croppedPixels);
+      const blob = await getCroppedBlob(image, croppedPixels, maxOutputSize);
       onCrop(blob);
     } catch (err) {
       console.error('Crop failed:', err);

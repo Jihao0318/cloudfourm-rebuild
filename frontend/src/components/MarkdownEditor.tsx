@@ -7,6 +7,8 @@ import rehypeRaw from 'rehype-raw';
 import rehypeSanitize from 'rehype-sanitize';
 import { markdownSchema } from '../utils/markdownSanitize';
 import { upload } from '../services/api';
+import { compressImageIfNeeded, formatBytes, UPLOAD_LIMIT_BYTES } from '../utils/imageCompress';
+import { useToast } from '../contexts/ToastContext';
 
 // ===== 视频平台嵌入检测 =====
 function detectVideoPlatform(url: string): { html: string; platform: string } | null {
@@ -110,6 +112,8 @@ export default function MarkdownEditor({ value, onChange, placeholder, minHeight
 
   const [mode, setMode] = useState<'write' | 'preview'>('write');
   const [uploading, setUploading] = useState(false);
+  const [uploadStatus, setUploadStatus] = useState('正在上传图片...');
+  const { toast } = useToast();
 
   const [showImageMenu, setShowImageMenu] = useState(false);
   const [showEmbedDialog, setShowEmbedDialog] = useState(false);
@@ -128,10 +132,18 @@ export default function MarkdownEditor({ value, onChange, placeholder, minHeight
   // 上传图片并在光标处插入
   const uploadImage = useCallback(async (file: File) => {
     if (!file.type.startsWith('image/')) return;
-    if (file.size > 20 * 1024 * 1024) { alert('图片不能超过 20MB'); return; }
     setUploading(true);
     try {
-      const res = await upload.image(file);
+      // 先压缩（小图自动跳过），避免撞上图床 19MB / 后端 20MB 的上限
+      setUploadStatus('正在压缩图片...');
+      const { file: toUpload, compressed, originalSize, finalSize } = await compressImageIfNeeded(file);
+      if (toUpload.size > UPLOAD_LIMIT_BYTES) {
+        alert(`图片压缩后仍有 ${formatBytes(toUpload.size)}，超过 ${formatBytes(UPLOAD_LIMIT_BYTES)} 上限，请换一张更小的图片`);
+        return;
+      }
+
+      setUploadStatus('正在上传图片...');
+      const res = await upload.image(toUpload);
       if (res.success && res.data?.url) {
         const markdown = `![](${res.data.url})`;
         const ta = textareaRef.current;
@@ -142,6 +154,7 @@ export default function MarkdownEditor({ value, onChange, placeholder, minHeight
         } else {
           onChange(value + '\n' + markdown);
         }
+        if (compressed) toast(`图片较大，已自动压缩：${formatBytes(originalSize)} → ${formatBytes(finalSize)}`);
       } else {
         alert(res.error || '上传失败');
       }
@@ -150,7 +163,7 @@ export default function MarkdownEditor({ value, onChange, placeholder, minHeight
     } finally {
       setUploading(false);
     }
-  }, [value, onChange]);
+  }, [value, onChange, toast]);
 
   // 嵌入链接处理
   const handleEmbedLink = useCallback(() => {
@@ -344,7 +357,7 @@ export default function MarkdownEditor({ value, onChange, placeholder, minHeight
             <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
             <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
           </svg>
-          正在上传图片...
+          {uploadStatus}
         </div>
       )}
 

@@ -8,6 +8,7 @@ import { formatDate, formatRelativeTime } from '../utils/date';
 import { users as usersApi, auth as authApi, upload as uploadApi, posts as postsApi, bookmarks as bookmarksApi, follows as followsApi, achievementsApi, invites as invitesApi } from '../services/api';
 import type { PublicUser, Post, AchievementInfo } from '../types';
 import { levelFromExp } from '../utils/level';
+import { compressImageIfNeeded } from '../utils/imageCompress';
 import { rewardLabel } from '../utils/achievements';
 import Avatar from '../components/Avatar';
 import BackButton from '../components/BackButton';
@@ -198,11 +199,13 @@ export default function Profile() {
     const modalType = cropTypeRef.current;
     setCropModal(null);
     const file = new File([blob], 'cropped.jpg', { type: 'image/jpeg' });
+    // 裁剪导出已按最长边上限缩放，这里再走一次统一压缩兜底（小图自动跳过，不改画质）
+    const { file: toUpload } = await compressImageIfNeeded(file);
 
     if (modalType === 'avatar') {
       setAvatarUploading(true); setError('');
       try {
-        const r = await uploadApi.image(file);
+        const r = await uploadApi.image(toUpload);
         if (r.success && r.data) {
           const avatarUrl = r.data.url;
           await usersApi.updateAvatar(avatarUrl);
@@ -217,7 +220,7 @@ export default function Profile() {
     } else {
       setBannerUploading(true); setError('');
       try {
-        const r = await uploadApi.image(file);
+        const r = await uploadApi.image(toUpload);
         if (r.success && r.data) {
           const bannerUrl = r.data.url;
           const save = await usersApi.updateBanner(bannerUrl);
@@ -942,6 +945,7 @@ export default function Profile() {
         <CropModal
           file={cropModal.file}
           aspect={cropModal.aspect}
+          maxOutputSize={cropModal.type === 'avatar' ? 1024 : 2048}
           onCrop={handleCropDone}
           onCancel={() => setCropModal(null)}
         />
