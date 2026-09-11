@@ -73,7 +73,7 @@ moderation.get('/review-posts', requireAdmin, async (c) => {
   const bindBase = [...params];
 
   const rows = await db.prepare(`
-    SELECT p.id, p.title, p.content, p.category_id, p.is_anonymous, p.created_at,
+    SELECT p.id, p.title, p.content, p.price, p.category_id, p.is_anonymous, p.created_at,
            p.review_status, p.flagged_by, p.flagged_reason, p.violation_count,
            (SELECT COUNT(*) FROM post_review_actions pra WHERE pra.post_id = p.id AND pra.round = p.review_round AND pra.action = 'pass') AS pass_count,
            (SELECT COUNT(*) FROM post_review_actions pra WHERE pra.post_id = p.id AND pra.round = p.review_round AND pra.action IN ('violation','confirm')) AS violation_count,
@@ -99,9 +99,13 @@ moderation.get('/review-posts', requireAdmin, async (c) => {
 
   const pLimit = await passLimit(db);
   const vLimit = await violationLimit(db);
+  // 付费帖正文对巡查员同样隐藏（与列表/详情口径一致）：只给锁定标记，
+  // 需要查看正文时得像普通用户一样付费解锁（管理员在详情页不受限）。
+  // 前端巡查卡片对 __PAID__ 前缀已有「付费内容，请点击原帖查看」的展示分支
+  const safeRows = (rows.results || []).map((p: any) => p.price ? { ...p, content: '__PAID__' + p.price } : p);
   return c.json({
     success: true,
-    data: rows.results || [],
+    data: safeRows,
     total: totalRow?.cnt || 0,
     page,
     pageSize,
