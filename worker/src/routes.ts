@@ -82,7 +82,10 @@ export function setupRoutes(app: Hono<{ Bindings: Env }>) {
   app.use('/api/auth/email/change-guest/request', rateLimit({ windowSeconds: 300, maxRequests: 3, keyPrefix: 'change-request', failClosed: true }));
   app.use('/api/auth/email/change-guest/confirm', rateLimit({ windowSeconds: 300, maxRequests: 10, keyPrefix: 'change-confirm', failClosed: true }));
   // 修改密码（当前密码一步直改）：限流防当前密码爆破
-  app.use('/api/auth/password', rateLimit({ windowSeconds: 600, maxRequests: 5, keyPrefix: 'password-change', failClosed: true }));
+  // 10 次/10 分钟：原为 5 次，实战中用户在「密码提示不可见」时连试几次就被锁 10 分钟；
+  // 且该端点已要求登录态（requireAuth），爆破密码走 /auth/login（5 次/分钟）更省事，
+  // 此处放宽不改变整体防护强度
+  app.use('/api/auth/password', rateLimit({ windowSeconds: 600, maxRequests: 10, keyPrefix: 'password-change', failClosed: true }));
   // 忘记密码：5 分钟 3 次（防验证码爆破/邮件轰炸）
   app.use('/api/auth/forgot', rateLimit({ windowSeconds: 300, maxRequests: 3, keyPrefix: 'forgot', failClosed: true }));
   app.use('/api/auth/reset', rateLimit({ windowSeconds: 300, maxRequests: 5, keyPrefix: 'reset', failClosed: true }));
