@@ -24,12 +24,51 @@ const FORTUNES = [
 
 // 回收价：VIP体验卡 30、SR/SSR 25、R 10、商城道具（user_items）5
 
-// 效果管理一次性机会：发帖后的装饰/背景修改整个帖子仅一次
-// 首次操作时把 effects_managed_at 置为当前时间并返回 true；已使用过返回 false（调用方拒绝）
-async function tryMarkEffectsManaged(db: D1Database, postId: number): Promise<boolean> {
-  const r = await db.prepare("UPDATE posts SET effects_managed_at = datetime('now') WHERE id = ? AND effects_managed_at IS NULL")
-    .bind(postId).run();
-  return r.meta.changes > 0;
+// ─── 帖子效果额度 ───
+// 同一帖子同时最多叠 MAX_POST_EFFECTS 种装饰效果（帖子背景 / 推荐卡 / 高亮卡 / 今日运势），
+// 避免单个帖子堆太多花哨效果。规则与前端 utils/postEffects.ts 保持一致：
+//   · 同一类效果已生效时再次使用（换背景、推荐卡续费、高亮/运势叠加时长）不占新额度；
+//   · 取消效果立即释放额度，取消本身不消耗任何机会；
+//   · 额度按「当前生效的效果种类数」实时计算，不用一次性标记（旧 effects_managed_at 已废弃）。
+const MAX_POST_EFFECTS = 2;
+
+export type PostEffectKind = 'bg' | 'bump' | 'highlight' | 'fortune';
+
+const EFFECT_POST_COLS = 'id, user_id, post_bg_id, bumped_until, highlighted_until, fortune_expires_at';
+
+interface EffectPostRow {
+  id: number;
+  user_id: number;
+  post_bg_id?: number | null;
+  bumped_until?: string | null;
+  highlighted_until?: string | null;
+  fortune_expires_at?: string | null;
+}
+
+// D1 存的是 UTC 'YYYY-MM-DD HH:MM:SS'，比较前补时区解析
+function isEffectActive(value?: string | null): boolean {
+  if (!value) return false;
+  const t = new Date(value.replace(' ', 'T') + 'Z').getTime();
+  return !isNaN(t) && t > Date.now();
+}
+
+function activeEffectKinds(post: EffectPostRow): PostEffectKind[] {
+  const kinds: PostEffectKind[] = [];
+  if (post.post_bg_id) kinds.push('bg');
+  if (isEffectActive(post.bumped_until)) kinds.push('bump');
+  if (isEffectActive(post.highlighted_until)) kinds.push('highlight');
+  if (isEffectActive(post.fortune_expires_at)) kinds.push('fortune');
+  return kinds;
+}
+
+// 额度校验：可继续使用返回 null，否则返回拒绝文案
+function effectQuotaError(post: EffectPostRow, applying: PostEffectKind): string | null {
+  const kinds = activeEffectKinds(post);
+  if (kinds.includes(applying)) return null; // 同类续期/替换不占新额度
+  if (kinds.length >= MAX_POST_EFFECTS) {
+    return `每个帖子最多同时使用 ${MAX_POST_EFFECTS} 种效果（本帖已有 ${kinds.length} 种），请先取消一个再试`;
+  }
+  return null;
 }
 
 // ─── 回收道具（支持三表 + 按稀有度定价）───
@@ -244,7 +283,8 @@ items.get('/my-items', requireAuth, async (c) => {
 });
 
 // ─── 使用推荐卡（原提升卡）：侧边栏推荐位展示（5 个槽位），可续费，累计上限 72 小时（3 天）───
-// 不占效果管理机会（推荐卡是独立付费道具，有自己的时长上限约束）
+// 占用 1 个效果额度位（与背景/高亮/运势共用「同帖最多 2 种」的限制），
+// 但同帖推荐位已在生效中时再次使用属续费叠加，不再另占额度
 // 挤位机制：槽位满 5 时，新用户可支付「被挤者剩余时间价值 × 2」的挤人费，
 // 把剩余时间最短的人挤下去；被挤者获得「剩余时间价值 × 1.15」补偿，帖子下架
 const RECOMMEND_HOURS = 12;
@@ -259,10 +299,15 @@ items.post('/use/bump/:postId', requireAuth, async (c) => {
 
   // 检查帖子所有权
   const post = await c.env.DB
-    .prepare('SELECT id, user_id FROM posts WHERE id = ? AND deleted_at IS NULL')
-    .bind(postId).first<{ id: number; user_id: number }>();
+    .prepare(`SELECT ${EFFECT_POST_COLS} FROM posts WHERE id = ? AND deleted_at IS NULL`)
+    .bind(postId).first<EffectPostRow>();
   if (!post) return c.json({ success: false, error: '帖子不存在' }, 404);
   if (post.user_id !== user.userId) return c.json({ success: false, error: '只能推荐自己的帖子' }, 403);
+
+  // 效果额度校验（推荐位已生效时属续费叠加，不占新额度）；
+  // 放在扣挤人费/消耗卡之前，避免先扣费再拒绝
+  const quotaErr = effectQuotaError(post, 'bump');
+  if (quotaErr) return c.json({ success: false, error: quotaErr }, 400);
 
   // 查找未使用的推荐卡（user_items + user_lottery_items）
   let item = await c.env.DB.prepare(`
@@ -437,15 +482,14 @@ items.post('/use/post-bg/:postId', requireAuth, async (c) => {
   if (!bgId || bgId < 1 || bgId > 6) return c.json({ success: false, error: '无效的帖子背景' }, 400);
 
   const post = await c.env.DB
-    .prepare('SELECT id, user_id FROM posts WHERE id = ? AND deleted_at IS NULL')
-    .bind(postId).first<{ id: number; user_id: number }>();
+    .prepare(`SELECT ${EFFECT_POST_COLS} FROM posts WHERE id = ? AND deleted_at IS NULL`)
+    .bind(postId).first<EffectPostRow>();
   if (!post) return c.json({ success: false, error: '帖子不存在' }, 404);
   if (post.user_id !== user.userId) return c.json({ success: false, error: '只能更换自己帖子的背景' }, 403);
 
-  // 效果管理一次性机会
-  if (!(await tryMarkEffectsManaged(c.env.DB, postId))) {
-    return c.json({ success: false, error: '该帖已使用过效果管理（每帖仅一次）' }, 400);
-  }
+  // 效果额度校验（已有背景时属同类替换，不占新额度）
+  const quotaErr = effectQuotaError(post, 'bg');
+  if (quotaErr) return c.json({ success: false, error: quotaErr }, 400);
 
   let item = await c.env.DB.prepare(`
     SELECT ui.id, 'shop' as src FROM user_items ui
@@ -480,15 +524,14 @@ items.post('/use/highlight/:postId', requireAuth, async (c) => {
   if (!postId) return c.json({ success: false, error: '无效的帖子' }, 400);
 
   const post = await c.env.DB
-    .prepare('SELECT id, user_id FROM posts WHERE id = ? AND deleted_at IS NULL')
-    .bind(postId).first<{ id: number; user_id: number }>();
+    .prepare(`SELECT ${EFFECT_POST_COLS} FROM posts WHERE id = ? AND deleted_at IS NULL`)
+    .bind(postId).first<EffectPostRow>();
   if (!post) return c.json({ success: false, error: '帖子不存在' }, 404);
   if (post.user_id !== user.userId) return c.json({ success: false, error: '只能高亮自己的帖子' }, 403);
 
-  // 效果管理一次性机会
-  if (!(await tryMarkEffectsManaged(c.env.DB, postId))) {
-    return c.json({ success: false, error: '该帖已使用过效果管理（每帖仅一次）' }, 400);
-  }
+  // 效果额度校验（已高亮时属续期叠加，不占新额度）
+  const quotaErr = effectQuotaError(post, 'highlight');
+  if (quotaErr) return c.json({ success: false, error: quotaErr }, 400);
 
   let item = await c.env.DB.prepare(`
     SELECT ui.id, 'shop' as src FROM user_items ui
@@ -528,15 +571,14 @@ items.post('/use/fortune/:postId', requireAuth, async (c) => {
   if (!postId) return c.json({ success: false, error: '无效的帖子' }, 400);
 
   const post = await c.env.DB
-    .prepare('SELECT id, user_id FROM posts WHERE id = ? AND deleted_at IS NULL')
-    .bind(postId).first<{ id: number; user_id: number }>();
+    .prepare(`SELECT ${EFFECT_POST_COLS} FROM posts WHERE id = ? AND deleted_at IS NULL`)
+    .bind(postId).first<EffectPostRow>();
   if (!post) return c.json({ success: false, error: '帖子不存在' }, 404);
   if (post.user_id !== user.userId) return c.json({ success: false, error: '只能给自己的帖子添加运势' }, 403);
 
-  // 效果管理一次性机会
-  if (!(await tryMarkEffectsManaged(c.env.DB, postId))) {
-    return c.json({ success: false, error: '该帖已使用过效果管理（每帖仅一次）' }, 400);
-  }
+  // 效果额度校验（已有运势时属续期叠加，不占新额度）
+  const quotaErr = effectQuotaError(post, 'fortune');
+  if (quotaErr) return c.json({ success: false, error: quotaErr }, 400);
 
   let item = await c.env.DB.prepare(`
     SELECT ui.id, 'shop' as src FROM user_items ui
@@ -1069,10 +1111,7 @@ items.post('/cancel-effect', requireAuth, async (c) => {
         .bind(postId, user.userId).run();
       return c.json({ success: true, message: '已取消炫彩标题效果' });
     case 'bg':
-      // 取消背景同样占用效果管理一次性机会
-      if (!(await tryMarkEffectsManaged(c.env.DB, postId))) {
-        return c.json({ success: false, error: '该帖已使用过效果管理（每帖仅一次）' }, 400);
-      }
+      // 取消背景立即释放「效果额度」（不再消耗任何机会，改为按生效效果数量实时计算）
       await c.env.DB.prepare("UPDATE posts SET post_bg_id = NULL WHERE id = ? AND user_id = ?")
         .bind(postId, user.userId).run();
       return c.json({ success: true, message: '已取消帖子背景效果' });
