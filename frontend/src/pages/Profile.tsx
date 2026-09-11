@@ -1,5 +1,4 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { createPortal } from 'react-dom';
 import { useParams, useNavigate, Link } from 'react-router-dom';
 import { Helmet } from 'react-helmet-async';
 import { useAuth } from '../contexts/AuthContext';
@@ -28,6 +27,8 @@ export default function Profile() {
   const { toast } = useToast();
   const navigate = useNavigate();
   const isOwnProfile = !id || (currentUser && currentUser.id === parseInt(id));
+  // 自己已保存的昵称主题（S VIP+ 专用；编辑入口在「编辑资料」页）
+  const myNickTheme = currentUser?.nick_theme && currentUser.nick_theme !== 'default' ? currentUser.nick_theme : 'theme1';
   const profileId = id ? parseInt(id) : currentUser?.id;
 
   const [profileUser, setProfileUser] = useState<PublicUser | null>(null);
@@ -36,7 +37,13 @@ export default function Profile() {
   const [postTotal, setPostTotal] = useState(0);
   const [postPage, setPostPage] = useState(1);
   const [loadingPosts, setLoadingPosts] = useState(false);
-  const [tab, setTab] = useState<'posts' | 'bookmarks' | 'growth' | 'invite' | 'settings'>('posts');
+  const [tab, setTab] = useState<'posts' | 'bookmarks' | 'growth' | 'invite' | 'settings'>(() => {
+    // 支持 /profile?tab=settings 直达（从「编辑资料」「注销账户」等子页返回时落回原 tab）
+    const t = new URLSearchParams(window.location.search).get('tab');
+    return (['posts', 'bookmarks', 'growth', 'invite', 'settings'] as const).includes(t as any)
+      ? (t as 'posts' | 'bookmarks' | 'growth' | 'invite' | 'settings')
+      : 'posts';
+  });
   const [bmList, setBmList] = useState<any[]>([]);
   const [bmTotal, setBmTotal] = useState(0);
   const [bmPage, setBmPage] = useState(1);
@@ -44,20 +51,16 @@ export default function Profile() {
   const [following, setFollowing] = useState(false);
   const [followLoading, setFollowLoading] = useState(false);
 
-  const [bio, setBio] = useState('');
-  const [newUsername, setNewUsername] = useState('');
   // 重发验证码倒计时（60s 防连点/防轰炸）
   // 注册邮箱验证徽章（未验证时显示）
   const [emailVerifyOpen, setEmailVerifyOpen] = useState(false);
   const [emailVerifyCode, setEmailVerifyCode] = useState('');
   const [emailVerifyLoading, setEmailVerifyLoading] = useState(false);
   const [emailVerifyError, setEmailVerifyError] = useState('');
-  const [customTitle, setCustomTitle] = useState('');
   // 邀请好友
   const [inviteData, setInviteData] = useState<{ codes: { code: string; created_at: string }[]; invited_count: number; total_reward: number } | null>(null);
   const [inviteLoading, setInviteLoading] = useState(false);
   const [inviteError, setInviteError] = useState('');
-  const [nickTheme, setNickTheme] = useState('theme1');
   const [avatarUploading, setAvatarUploading] = useState(false);
   const [bannerUploading, setBannerUploading] = useState(false);
   const [bannerVer, setBannerVer] = useState(0); // 背景图版本号（更新后 +时间戳，防缓存旧图）
@@ -67,11 +70,12 @@ export default function Profile() {
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
   const [showBanDetail, setShowBanDetail] = useState(false);
+  // 上一次渲染的 profileId：用于区分「首次挂载」与「真正切换用户」（后者才重置 tab）
+  const prevProfileIdRef = useRef<number | undefined>(undefined);
   const [achData, setAchData] = useState<{ achievements: AchievementInfo[]; unlocked_count: number; total: number } | null>(null);
   const [achLoading, setAchLoading] = useState(false);
   const [achError, setAchError] = useState(false);
   const [achCollapsed, setAchCollapsed] = useState(false); // 成就栏折叠（默认展开）
-  const [deleteModal, setDeleteModal] = useState<{ step: 1 | 2 | 3; password: string; countdown: number; error?: string; verifying?: boolean } | null>(null);
   const [unbanModal, setUnbanModal] = useState(false);
   const [logoutModal, setLogoutModal] = useState(false);
 
@@ -85,9 +89,12 @@ export default function Profile() {
 
   useEffect(() => {
     if (profileId) {
-      // 切换用户时重置分页/tab/收藏列表，避免展示上一个用户的数据
+      // 切换用户时重置分页/tab/收藏列表，避免展示上一个用户的数据。
+      // 注意：首次挂载不要重置 tab —— 否则会覆盖 /profile?tab=xxx 指定的初始 tab
+      const switchedUser = prevProfileIdRef.current !== undefined && prevProfileIdRef.current !== profileId;
+      prevProfileIdRef.current = profileId;
       setPostPage(1);
-      setTab('posts');
+      if (switchedUser) setTab('posts');
       setBmList([]);
       loadProfile(profileId);
       loadUserPosts(profileId, 1);
@@ -131,7 +138,7 @@ export default function Profile() {
     try {
       const res = await usersApi.getProfile(userId);
       if (res.success && res.data) {
-        setProfileUser(res.data); setBio(res.data.bio || '');
+        setProfileUser(res.data);
       } else {
         setLoadFailed(true);
         return;
@@ -148,12 +155,6 @@ export default function Profile() {
         if (fRes.success) setFollowing(fRes.data?.following || false);
       } catch { /* 关注状态失败不阻塞主页渲染 */ }
     }
-    if (isOwnProfile && currentUser) {
-      setNewUsername(currentUser.username);
-      setCustomTitle(currentUser.custom_title || '');
-      const savedTheme = (currentUser.nick_theme && currentUser.nick_theme !== 'default') ? currentUser.nick_theme : 'theme1';
-      setNickTheme(savedTheme);
-    }
   };
 
   const loadBookmarks = async (page: number = 1) => {
@@ -165,8 +166,12 @@ export default function Profile() {
     setBmLoading(false);
   };
 
-  const loadUserPosts = async (userId: number, page: number) => {
-    setLoadingPosts(true);
+  // URL 直达「收藏」tab（/profile?tab=bookmarks）时也要拉数据（原先只有点 tab 按钮才拉）
+  useEffect(() => {
+    if (tab === 'bookmarks' && isOwnProfile && bmList.length === 0) loadBookmarks();
+  }, [tab, isOwnProfile]);
+
+  const loadUserPosts = async (userId: number, page: number) => {    setLoadingPosts(true);
     try {
       const res = await postsApi.list({ userId, page, pageSize: 10 });
       if (res.success && res.data) { setPostList(res.data); setPostTotal(res.total || 0); }
@@ -229,13 +234,6 @@ export default function Profile() {
       setBannerUploading(false);
     }
   }, []);
-
-  const flashRef = useRef<ReturnType<typeof setTimeout>>();
-  const flash = (msg: string, isErr = false) => {
-    if (flashRef.current) clearTimeout(flashRef.current);
-    setMessage(isErr ? '' : msg); setError(isErr ? msg : '');
-    flashRef.current = setTimeout(() => { setMessage(''); setError(''); }, 3000);
-  };
 
   // 复制文本：优先 async clipboard API，失败回退 textarea + execCommand，再失败提示手动复制
   const copyText = async (text: string, successMsg: string) => {
@@ -401,7 +399,7 @@ export default function Profile() {
             </div>
             <div className="flex-1 text-center sm:text-left">
               <div className="flex items-center justify-center sm:justify-start gap-2 flex-wrap">
-                <h1 className={`text-xl font-bold ${getVipNickClass(isOwnProfile ? currentUser?.vip_tier : profileUser.vip_tier, isOwnProfile ? nickTheme : profileUser.nick_theme) || 'text-gray-900'}`}>{profileUser.username}</h1>
+                <h1 className={`text-xl font-bold ${getVipNickClass(isOwnProfile ? currentUser?.vip_tier : profileUser.vip_tier, isOwnProfile ? myNickTheme : profileUser.nick_theme) || 'text-gray-900'}`}>{profileUser.username}</h1>
                 <VIPBadge vip_tier={profileUser.vip_tier} />
                 {profileUser.exp != null && <span className="text-[10px] bg-primary-50 text-primary-600 px-1.5 py-0.5 rounded font-medium">Lv.{levelFromExp(profileUser.exp).level} {levelFromExp(profileUser.exp).tierName}</span>}
                 {profileUser.title_badge && <span className="text-[10px] bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded font-medium">{profileUser.title_badge}</span>}
@@ -557,14 +555,16 @@ export default function Profile() {
             </Link>
           )}
       {/* 编辑资料面板（settings Tab） */}
+      {/* 设置 tab：账号与安全入口（资料编辑/改密码/换邮箱/注销均为独立页面，这里只留入口） */}
       {tab === 'settings' && isOwnProfile && (
-        <div className="bg-white rounded-2xl border p-6 space-y-5 transition-all duration-300">
-          <div className="flex items-center justify-between">
-            <h2 className="font-bold text-gray-900">编辑资料</h2>
+        <div className="bg-white rounded-2xl border p-6">
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="font-bold text-gray-900">设置</h2>
           </div>
+
           {/* 邮箱未验证提示（策略 A 宽松：仅提示，不限制功能） */}
           {currentUser?.email_verified === 0 && (
-            <div className="bg-amber-50 border border-amber-200 rounded-xl p-4">
+            <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 mb-2">
               <div className="flex items-center justify-between flex-wrap gap-2">
                 <p className="text-sm font-medium text-amber-800">📧 邮箱未验证</p>
                 <div className="flex gap-2">
@@ -592,171 +592,71 @@ export default function Profile() {
               {emailVerifyError && <p className="text-xs text-red-500 mt-2">{emailVerifyError}</p>}
             </div>
           )}
-          <div>
-            <label className="block text-xs font-medium text-gray-500 mb-1.5">用户名</label>
-            <div className="flex gap-2">
-              <input type="text" value={newUsername} onChange={e => setNewUsername(e.target.value)}
-                className="flex-1 px-3 py-2 border rounded-xl outline-none focus:border-primary-500 text-sm" />
-              <button onClick={async () => {
-                try { const r = await authApi.changeUsername(newUsername); if (r.success) { flash('用户名已更新'); await refreshUser(); } else flash(r.error || '失败', true); }
-                catch (err: any) { flash(err.message, true); }
-              }} className="px-4 py-2 bg-primary-600 text-white rounded-xl text-sm font-medium hover:bg-primary-700 transition">保存</button>
-            </div>
-          </div>
-          <div>
-            <label className="block text-xs font-medium text-gray-500 mb-1.5">个人简介</label>
-            <textarea value={bio} onChange={e => setBio(e.target.value)} rows={3} maxLength={500}
-              className="w-full px-3 py-2 border rounded-xl outline-none focus:border-primary-500 text-sm resize-none" placeholder="介绍一下自己..." />
-            <div className="flex justify-end mt-2">
-              <button onClick={async () => { try { await usersApi.updateProfile({ bio }); await refreshUser(); flash('简介已更新'); } catch (err: any) { flash(err.message, true); } }}
-                className="px-4 py-2 bg-primary-600 text-white rounded-xl text-sm font-medium hover:bg-primary-700 transition">保存简介</button>
-            </div>
-          </div>
-          {currentUser?.is_vip && (
-          <div>
-            <label className="block text-xs font-medium text-gray-500 mb-1.5">自定义头衔 <span className="text-primary-500">VIP</span></label>
-            <div className="flex gap-2">
-              <input type="text" value={customTitle} onChange={e => setCustomTitle(e.target.value.slice(0, 30))}
-                className="flex-1 px-3 py-2 border rounded-xl outline-none focus:border-primary-500 text-sm" placeholder="设置你的VIP头衔" maxLength={30} />
-              <button onClick={async () => {
-                try { const r = await usersApi.updateTitle(customTitle); if (r.success) { flash('头衔已更新'); await refreshUser(); } else flash(r.error || '失败', true); }
-                catch (err: any) { flash(err.message, true); }
-              }} className="px-4 py-2 bg-primary-600 text-white rounded-xl text-sm font-medium hover:bg-primary-700 transition">保存</button>
-            </div>
-          </div>
-          )}
-          {currentUser?.vip_tier === 'svip+' && (
-          <div>
-            <label className="block text-xs font-medium text-gray-500 mb-1.5">昵称主题 <span className="text-red-500">S VIP+</span></label>
-            <div className="flex flex-wrap gap-2 mb-3">
-              {[
-                { id: 'theme1', label: '红金', colors: 'from-red-500 via-amber-400 to-red-500' },
-                { id: 'theme2', label: '紫粉', colors: 'from-purple-500 via-pink-500 to-purple-500' },
-                { id: 'theme3', label: '蓝紫', colors: 'from-cyan-500 via-blue-500 to-purple-500' },
-                { id: 'theme4', label: '绿金', colors: 'from-emerald-500 via-green-400 to-amber-400' },
-              ].map(theme => {
-                const active = nickTheme === theme.id;
-                return (
-                  <button key={theme.id} onClick={() => setNickTheme(theme.id)}
-                    className={`px-3 py-2 rounded-xl text-xs font-medium border-2 transition ${active ? 'border-primary-500 ring-2 ring-primary-200' : 'border-gray-200 hover:border-gray-300'}`}>
-                    <span className={`text-transparent bg-clip-text bg-gradient-to-r ${theme.colors} font-bold`}>{theme.label}</span>
-                  </button>
-                );
-              })}
-            </div>
-            <div className="flex items-center gap-2">
-              <button onClick={async () => {
-                try { const r = await usersApi.updateNickTheme(nickTheme); if (r.success) { await refreshUser(); flash('主题已保存'); } else flash(r.error || '失败', true); }
-                catch (err: any) { flash(err.message, true); }
-              }} className="px-4 py-2 bg-primary-600 text-white rounded-xl text-sm font-medium hover:bg-primary-700 transition">保存主题</button>
-              {nickTheme !== ((currentUser?.nick_theme && currentUser.nick_theme !== 'default') ? currentUser.nick_theme : 'theme1') && (
-                <span className="text-xs text-orange-500">有未保存的更改</span>
-              )}
-            </div>
-            <div className="mt-3 p-3 bg-gray-50 rounded-xl text-center">
-              <span className="text-xs text-gray-400">预览效果：</span>
-              <div className={`text-lg font-bold mt-1 ${getVipNickClass(currentUser?.vip_tier, nickTheme) || 'text-gray-900'}`}>{currentUser?.username || '用户名'}</div>
-            </div>
-          </div>
-          )}
-          <div>
-            <label className="block text-xs font-medium text-gray-500 mb-1.5">邮箱</label>
-            <div className="flex items-center justify-between flex-wrap gap-2">
-              <p className="text-sm text-gray-700">{currentUser?.email}</p>
-              <button
-                onClick={() => navigate('/change-email')}
-                className="px-4 py-2 bg-primary-600 text-white rounded-xl text-sm font-medium hover:bg-primary-700 transition">
-                更换邮箱
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
 
-      {/* 安全设置面板（settings Tab 内第二块） */}
-      {tab === 'settings' && isOwnProfile && (
-        <div className="bg-white rounded-2xl border p-6">
-          <div className="flex items-center justify-between mb-4">
-            <h2 className="font-bold text-gray-900">安全设置</h2>
-          </div>
-          <div className="grid md:grid-cols-2 gap-6 items-start">
-            {/* 左列：修改密码入口（表单已移到独立页面 /change-password，设置页只留入口避免臃肿） */}
-            <div className="pb-5 md:pb-0 md:border-r md:pr-6 border-gray-100">
-              <h3 className="text-sm font-semibold text-gray-800 mb-3">修改密码</h3>
-              <p className="text-xs text-gray-400 mb-3">在独立页面验证当前密码后设置新密码，修改成功后需重新登录。</p>
-              <button
-                onClick={() => navigate('/change-password')}
-                className="px-4 py-2 bg-primary-600 text-white rounded-xl text-sm font-medium hover:bg-primary-700 transition">
-                修改密码
-              </button>
-            </div>
-            {/* 右列 */}
-            <div className="space-y-5">
-              {/* 管理后台入口（仅管理员/巡查员可见） */}
-              {(currentUser?.role === 'admin' || currentUser?.role === 'moderator') && (
-                <div className="pb-5 border-b">
-                  <h3 className="text-sm font-semibold text-gray-800 mb-3">管理</h3>
-                  <Link to="/admin"
-                    className="inline-flex items-center gap-2 px-4 py-2.5 bg-gray-50 text-gray-700 border border-gray-200 rounded-xl text-sm font-medium hover:bg-gray-100 transition">
-                    <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                      <circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/>
-                    </svg>
-                    进入管理后台
-                  </Link>
+          {/* 入口列表：每行一个去处，表单都在独立页面里 */}
+          <div className="divide-y divide-gray-100">
+            <Link to="/edit-profile" className="flex items-center gap-3 px-2 py-3 rounded-xl hover:bg-gray-50 transition">
+              <span className="text-lg leading-none">👤</span>
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-medium text-gray-800">编辑资料</p>
+                <p className="text-xs text-gray-400 mt-0.5 truncate">
+                  用户名 · 个人简介{currentUser?.is_vip ? ' · 自定义头衔' : ''}{currentUser?.vip_tier === 'svip+' ? ' · 昵称主题' : ''}
+                </p>
+              </div>
+              <span className="text-gray-300">›</span>
+            </Link>
+
+            <Link to="/change-email" className="flex items-center gap-3 px-2 py-3 rounded-xl hover:bg-gray-50 transition">
+              <span className="text-lg leading-none">📧</span>
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-medium text-gray-800">邮箱</p>
+                <p className="text-xs text-gray-400 mt-0.5 truncate">
+                  {currentUser?.email} · {currentUser?.email_verified === 0 ? '未验证' : '已验证'}
+                </p>
+              </div>
+              <span className="text-gray-300">›</span>
+            </Link>
+
+            <Link to="/change-password" className="flex items-center gap-3 px-2 py-3 rounded-xl hover:bg-gray-50 transition">
+              <span className="text-lg leading-none">🔒</span>
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-medium text-gray-800">修改密码</p>
+                <p className="text-xs text-gray-400 mt-0.5 truncate">验证当前密码后设置新密码，修改成功后需重新登录</p>
+              </div>
+              <span className="text-gray-300">›</span>
+            </Link>
+
+            {(currentUser?.role === 'admin' || currentUser?.role === 'moderator') && (
+              <Link to="/admin" className="flex items-center gap-3 px-2 py-3 rounded-xl hover:bg-gray-50 transition">
+                <span className="text-lg leading-none">🛠</span>
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-medium text-gray-800">管理后台</p>
+                  <p className="text-xs text-gray-400 mt-0.5 truncate">进入{currentUser?.role === 'admin' ? '管理后台' : '巡查台'}</p>
                 </div>
-              )}
+                <span className="text-gray-300">›</span>
+              </Link>
+            )}
 
-              {/* 退出登录 */}
-              <div className="pb-5 border-b">
-                <h3 className="text-sm font-semibold text-gray-800 mb-3">退出登录</h3>
-                <button onClick={() => setLogoutModal(true)}
-                  className="w-full md:w-auto px-4 py-2.5 bg-red-50 text-red-600 border border-red-200 rounded-xl text-sm font-medium hover:bg-red-100 transition">
-                  退出当前账号
-                </button>
+            <button onClick={() => setLogoutModal(true)}
+              className="w-full flex items-center gap-3 px-2 py-3 rounded-xl hover:bg-gray-50 transition text-left">
+              <span className="text-lg leading-none">🚪</span>
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-medium text-gray-800">退出登录</p>
+                <p className="text-xs text-gray-400 mt-0.5 truncate">退出当前登录的账号</p>
               </div>
+              <span className="text-gray-300">›</span>
+            </button>
 
-              <div>
-                <h3 className="text-sm font-semibold text-red-600 mb-3">注销账户</h3>
-
-                {currentUser?.scheduled_deleted_at ? (() => {
-                  const d = new Date(currentUser.scheduled_deleted_at!.replace(' ', 'T') + 'Z');
-                  const remainingMs = d.getTime() - Date.now();
-                  const totalHours = Math.max(0, Math.floor(remainingMs / (1000 * 60 * 60)));
-                  const days = Math.floor(totalHours / 24);
-                  const hours = totalHours % 24;
-                  const remainingText = days > 0 ? `${days}天${hours}小时` : `${hours}小时`;
-                  return (
-                  <div className="bg-yellow-50 border border-yellow-200 rounded-xl p-4">
-                    <p className="text-sm text-yellow-800 font-medium mb-1">⏳ 账户注销待处理</p>
-                    <p className="text-xs text-yellow-700 mb-3">
-                      将在 <strong>{remainingText}</strong> 后自动注销。在此期间可随时取消。
-                    </p>
-                    <button onClick={async () => {
-                      try {
-                        const r = await authApi.cancelDeletion();
-                        if (r.success) {
-                          await refreshUser();
-                          flash('已取消账户注销');
-                        } else {
-                          flash(r.error || '取消失败', true);
-                        }
-                      } catch (err: any) {
-                        flash(err.message, true);
-                      }
-                    }}
-                      className="px-4 py-2 bg-white border border-yellow-300 text-yellow-700 rounded-xl text-sm font-medium hover:bg-yellow-50 transition">
-                      取消注销
-                    </button>
-                  </div>);
-                })() : (
-                  <>
-                    <p className="text-xs text-gray-500 mb-3">注销后账户和所有内容将被清除，有 3 天冷静期可反悔。</p>
-                    <button onClick={() => setDeleteModal({ step: 1, password: '', countdown: 5 })}
-                      className="px-4 py-2 bg-red-600 text-white rounded-xl text-sm font-medium hover:bg-red-700 transition">注销账户</button>
-                  </>
-                )}
+            <Link to="/delete-account" className="flex items-center gap-3 px-2 py-3 rounded-xl hover:bg-red-50/60 transition">
+              <span className="text-lg leading-none">⚠️</span>
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-medium text-red-600">注销账户</p>
+                <p className="text-xs text-gray-400 mt-0.5 truncate">
+                  {currentUser?.scheduled_deleted_at ? '已提交注销，可在页面内取消' : '提交后 3 天冷静期，期间可随时取消'}
+                </p>
               </div>
-            </div>
+              <span className="text-gray-300">›</span>
+            </Link>
           </div>
         </div>
       )}
@@ -942,102 +842,6 @@ export default function Profile() {
         onCancel={() => setLogoutModal(false)}
       />
 
-      {/* 注销确认弹窗 — 两级确认 + 5 秒冷静 */}
-      {deleteModal && (() => {
-        const modal = deleteModal;
-        // portal 到 body：避免被困在 main z-10 堆叠上下文（否则遮罩盖不住根级底部导航 z-50）
-        return createPortal(
-          <div className="fixed inset-0 z-[60] bg-black/60 flex items-center justify-center p-4" onClick={() => setDeleteModal(null)}>
-            <div className="bg-white rounded-2xl max-w-sm w-full p-6 shadow-2xl" onClick={e => e.stopPropagation()}>
-              {modal.step === 1 && (
-                <>
-                  <h3 className="text-lg font-bold text-red-600 mb-3">⚠️ 确认注销</h3>
-                  <p className="text-sm text-gray-600 mb-2">你确定要注销账户吗？</p>
-                  <p className="text-xs text-gray-400 mb-5">注销后有 <strong>3 天冷静期</strong>，期间可以随时取消。</p>
-                  <div className="flex gap-2 justify-end">
-                    <button onClick={() => setDeleteModal(null)} className="px-4 py-2 border rounded-xl text-sm text-gray-600 hover:bg-gray-50 transition">取消</button>
-                    <button onClick={() => setDeleteModal({ ...modal, step: 2 })} className="px-4 py-2 bg-red-600 text-white rounded-xl text-sm font-medium hover:bg-red-700 transition">下一步</button>
-                  </div>
-                </>
-              )}
-              {modal.step === 2 && (
-                <>
-                  <h3 className="text-lg font-bold text-red-600 mb-3">🔐 验证密码</h3>
-                  <p className="text-xs text-gray-500 mb-4">请输入密码验证身份，验证通过后将进入 5 秒冷静倒计时。</p>
-                  <input type="password" value={modal.password} onChange={e => setDeleteModal({ ...modal, password: e.target.value, error: '' })}
-                    className="w-full px-3 py-2 border border-red-300 rounded-xl outline-none focus:border-red-500 text-sm mb-2" placeholder="输入密码" />
-                  {modal.error && <p className="text-xs text-red-500 mb-3">{modal.error}</p>}
-                  <div className="flex gap-2 justify-end">
-                    <button onClick={() => setDeleteModal(null)} className="px-4 py-2 border rounded-xl text-sm text-gray-600 hover:bg-gray-50 transition">取消</button>
-                    <button disabled={!modal.password || modal.verifying}
-                      onClick={async () => {
-                        setDeleteModal(prev => prev ? { ...prev, verifying: true, error: '' } : prev);
-                        try {
-                          const r = await authApi.verifyPassword(modal.password);
-                          if (r.success) {
-                            // 密码正确，进入 5 秒倒计时
-                            setDeleteModal(prev => prev ? { ...prev, step: 3, verifying: false, countdown: 5 } : prev);
-                            const timer = setInterval(() => {
-                              setDeleteModal(prev => {
-                                if (!prev || prev.countdown <= 1) {
-                                  clearInterval(timer);
-                                  return prev ? { ...prev, countdown: 0 } : null;
-                                }
-                                return { ...prev, countdown: prev.countdown - 1 };
-                              });
-                            }, 1000);
-                          } else {
-                            setDeleteModal(prev => prev ? { ...prev, verifying: false, error: r.error || '密码错误' } : prev);
-                          }
-                        } catch (err: any) {
-                          setDeleteModal(prev => prev ? { ...prev, verifying: false, error: err.message || '验证失败' } : prev);
-                        }
-                      }}
-                      className="px-4 py-2 bg-red-600 text-white rounded-xl text-sm font-medium hover:bg-red-700 transition disabled:opacity-50">
-                      {modal.verifying ? '验证中...' : '验证密码'}
-                    </button>
-                  </div>
-                </>
-              )}
-              {modal.step === 3 && (
-                <>
-                  <h3 className="text-lg font-bold text-red-600 mb-3">⏳ 冷静倒计时</h3>
-                  <p className="text-sm text-gray-600 mb-1">请等待 <strong>{modal.countdown}</strong> 秒后点击确认提交注销。</p>
-                  <p className="text-xs text-gray-400 mb-5">冷静期内可随时取消操作。</p>
-                  <div className="flex items-center justify-center mb-4">
-                    <div className="w-16 h-16 rounded-full bg-red-100 flex items-center justify-center">
-                      <span className="text-2xl font-bold text-red-600">{modal.countdown}</span>
-                    </div>
-                  </div>
-                  <div className="flex gap-2 justify-end">
-                    <button onClick={() => setDeleteModal(null)} className="px-4 py-2 border rounded-xl text-sm text-gray-600 hover:bg-gray-50 transition">取消</button>
-                    <button disabled={modal.countdown > 0}
-                      onClick={async () => {
-                        setDeleteModal(prev => prev ? { ...prev, verifying: true } : prev);
-                        try {
-                          const r = await authApi.deleteAccount(modal.password);
-                          if (r.success) {
-                            setDeleteModal(null);
-                            flash('账户将在3天后自动注销');
-                            setTimeout(() => { logout(); navigate('/'); }, 2000);
-                          } else {
-                            setDeleteModal(prev => prev ? { ...prev, verifying: false, error: r.error || '提交失败' } : prev);
-                          }
-                        } catch (err: any) {
-                          setDeleteModal(prev => prev ? { ...prev, verifying: false, error: err.message || '提交失败' } : prev);
-                        }
-                      }}
-                      className="px-4 py-2 bg-red-600 text-white rounded-xl text-sm font-medium hover:bg-red-700 transition disabled:opacity-50">
-                      {modal.verifying ? '提交中...' : '确认提交'}
-                    </button>
-                  </div>
-                </>
-              )}
-            </div>
-          </div>,
-          document.body
-        );
-      })()}
     </>
   );
 }
