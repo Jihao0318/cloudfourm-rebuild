@@ -107,4 +107,40 @@ achievements.get('/hall', optionalAuth, async (c) => {
   });
 });
 
+// 某成就的达成者名单（公开，分页）：成就殿堂点击某个成就后查看「哪些人达成了」
+achievements.get('/:key/unlockers', async (c) => {
+  const key = c.req.param('key');
+  // 只允许查询已定义的成就，避免任意 key 探测
+  const known = (ACHIEVEMENTS as Record<string, unknown>)[key] || (PATROL_ACHIEVEMENTS as Record<string, unknown>)[key];
+  if (!known) return c.json({ success: false, error: '成就不存在' }, 404);
+
+  const page = Math.max(1, parseInt(c.req.query('page') || '1') || 1);
+  const pageSize = 20;
+
+  const totalRow = await c.env.DB
+    .prepare('SELECT COUNT(*) AS c FROM achievements a JOIN users u ON u.id = a.user_id WHERE a.key = ? AND u.deleted_at IS NULL')
+    .bind(key).first<{ c: number }>();
+
+  // 先达成者在前（unlocked_at 相同时按 id 稳定排序）
+  const rows = await c.env.DB
+    .prepare(`SELECT u.id, u.username, u.avatar_url, u.avatar_frame, u.avatar_frame_expires_at, u.exp, a.unlocked_at
+      FROM achievements a
+      JOIN users u ON u.id = a.user_id
+      WHERE a.key = ? AND u.deleted_at IS NULL
+      ORDER BY a.unlocked_at ASC, u.id ASC
+      LIMIT ? OFFSET ?`)
+    .bind(key, pageSize, (page - 1) * pageSize)
+    .all<{ id: number; username: string; avatar_url: string; avatar_frame: string | null; avatar_frame_expires_at: string | null; exp: number; unlocked_at: string }>();
+
+  return c.json({
+    success: true,
+    data: {
+      users: rows.results || [],
+      total: totalRow?.c || 0,
+      page,
+      page_size: pageSize,
+    },
+  });
+});
+
 export default achievements;
