@@ -1,0 +1,2294 @@
+{
+ "title": "CloudForum",
+ "brief": "校园论坛客户端：帖子浏览与发布、评论互动、签到与积分经济、商城/仓库/抽奖、成就称号与会员体系。",
+ "frame": "phone",
+ "platform": "android",
+ "paletteKey": "purple",
+ "theme": {
+  "dark": false,
+  "bothModes": true,
+  "contrast": "standard",
+  "shape": "rounded",
+  "font": "roboto",
+  "emphasized": false,
+  "motion": "expressive"
+ },
+ "frames": [
+  {
+   "id": "login",
+   "name": "登录",
+   "x": 0,
+   "y": 0,
+   "note": "邮箱密码登录；未验证邮箱先引导验证；忘记原密码走邮箱重置。"
+  },
+  {
+   "id": "register",
+   "name": "注册",
+   "x": 492,
+   "y": 0,
+   "note": "用户名 3-20 字符（字母/数字/下划线/中文）；密码至少 6 位含大写字母和数字；邀请码按站点开关选填。"
+  },
+  {
+   "id": "home",
+   "name": "首页",
+   "x": 984,
+   "y": 0,
+   "note": "帖子列表：最新/热门/浏览最多排序 + 板块筛选；置顶帖固定在顶部；FAB 发帖。"
+  },
+  {
+   "id": "postDetail",
+   "name": "帖子详情",
+   "x": 1476,
+   "y": 0,
+   "note": "作者与正文（Markdown/图片/视频）、点赞/收藏/打赏/举报；付费帖先看价格，支付解锁后可查看 3 次；评论区直接回复。"
+  },
+  {
+   "id": "createPost",
+   "name": "发布帖子",
+   "x": 1968,
+   "y": 0,
+   "note": "标题 + 正文（Markdown 图片/视频）+ 板块选择；付费帖仅限付费板块；发布后进巡查队列与 AI 审核；同一帖子的效果管理最多选 2 种（背景/推荐/高亮/运势）。"
+  },
+  {
+   "id": "notifications",
+   "name": "通知",
+   "x": 0,
+   "y": 1000,
+   "note": "点赞/评论/系统/责令换邮箱通知；点击跳对应帖子或流程；支持全部已读。"
+  },
+  {
+   "id": "me",
+   "name": "我的",
+   "x": 492,
+   "y": 1000,
+   "note": "资料头 + 全部功能入口：签到/钱包/商城/仓库/抽奖/排行/VIP/收藏/编辑资料/设置。"
+  },
+  {
+   "id": "profile",
+   "name": "个人主页",
+   "x": 984,
+   "y": 1000,
+   "note": "背景图 + 头像 + 徽章（VIP/等级/称号）+ 帖子与成就两个标签；他人主页显示关注按钮。"
+  },
+  {
+   "id": "editProfile",
+   "name": "编辑资料",
+   "x": 1476,
+   "y": 1000,
+   "note": "用户名、个人简介、自定义头衔（VIP）一次保存；S VIP+ 可换昵称主题。"
+  },
+  {
+   "id": "checkin",
+   "name": "每日签到",
+   "x": 0,
+   "y": 2000,
+   "note": "连续签到积分 7 天一轮（+1/+2/+3/+5/+8/+13/+20），每次固定 +2 经验；积分发放没有每日上限。连续 30 天解锁全勤王。"
+  },
+  {
+   "id": "coins",
+   "name": "积分钱包",
+   "x": 492,
+   "y": 2000,
+   "note": "余额、今日收入（发帖 2 次/评论 5 次/被赞 5 次/签到 1 次各计次数，无总分上限）与流水；可发起转账。"
+  },
+  {
+   "id": "coinsTransfer",
+   "name": "积分转账",
+   "x": 984,
+   "y": 2000,
+   "note": "按用户名转积分；手续费按 VIP 等级递减，由转出方承担。"
+  },
+  {
+   "id": "shop",
+   "name": "积分商城",
+   "x": 1476,
+   "y": 2000,
+   "note": "积分兑换道具：改名卡/置顶卡/头像框等，买后进道具仓库。"
+  },
+  {
+   "id": "warehouse",
+   "name": "道具仓库",
+   "x": 1968,
+   "y": 2000,
+   "note": "我的道具（点击使用）与活跃效果（可摘除）；支持批量回收换积分。"
+  },
+  {
+   "id": "lottery",
+   "name": "幸运抽奖",
+   "x": 0,
+   "y": 3000,
+   "note": "积分抽奖：奖池 SSR/SR/R/N 与保底；单抽或十连（十连享折扣）。"
+  },
+  {
+   "id": "leaderboard",
+   "name": "排行榜",
+   "x": 492,
+   "y": 3000,
+   "note": "积分 Top 榜：前三名领奖台展示，其余按名次排列。"
+  },
+  {
+   "id": "vip",
+   "name": "VIP 会员",
+   "x": 984,
+   "y": 3000,
+   "note": "三档会员：购买或差价升级；权益含签到加成/转账费率/上传上限。"
+  },
+  {
+   "id": "changePassword",
+   "name": "修改密码",
+   "x": 1476,
+   "y": 3000,
+   "note": "验证当前密码后设置新密码；成功后所有设备登出。忘记原密码走登录页的邮箱重置。"
+  },
+  {
+   "id": "changeEmail",
+   "name": "更换邮箱",
+   "x": 1968,
+   "y": 3000,
+   "note": "向新邮箱发 6 位验证码，验证通过即换绑；换绑会登出所有设备。"
+  },
+  {
+   "id": "forgotPassword",
+   "name": "忘记密码",
+   "x": 0,
+   "y": 4000,
+   "note": "未登录输入注册邮箱发码重置；已登录时邮箱锁定为绑定邮箱不可改。"
+  }
+ ],
+ "groups": [
+  {
+   "id": "lg1",
+   "x": 0,
+   "y": 0,
+   "axis": "x",
+   "items": [
+    {
+     "id": "bar2",
+     "kind": "topAppBar",
+     "label": "登录",
+     "icon": null,
+     "variant": "filled"
+    }
+   ]
+  },
+  {
+   "id": "lg3",
+   "x": 16,
+   "y": 200,
+   "axis": "y",
+   "items": [
+    {
+     "id": "f4",
+     "kind": "textField",
+     "label": "邮箱",
+     "icon": "mail",
+     "variant": "outlined"
+    },
+    {
+     "id": "f5",
+     "kind": "textField",
+     "label": "密码",
+     "icon": "lock",
+     "variant": "outlined"
+    },
+    {
+     "id": "b6",
+     "kind": "button",
+     "label": "登录",
+     "icon": null,
+     "variant": "filled",
+     "size": 380,
+     "action": {
+      "to": "home",
+      "transition": "fade"
+     },
+     "note": "成功进入首页；被封禁账号提示封禁原因与解封入口"
+    },
+    {
+     "id": "t7",
+     "kind": "text",
+     "label": "忘记密码？通过邮箱重置",
+     "icon": null,
+     "variant": "text",
+     "action": {
+      "to": "forgotPassword",
+      "transition": "slide"
+     }
+    },
+    {
+     "id": "t8",
+     "kind": "text",
+     "label": "没有账号？立即注册",
+     "icon": null,
+     "variant": "text",
+     "action": {
+      "to": "register",
+      "transition": "slide"
+     }
+    }
+   ]
+  },
+  {
+   "id": "rg9",
+   "x": 492,
+   "y": 0,
+   "axis": "x",
+   "items": [
+    {
+     "id": "bar10",
+     "kind": "topAppBar",
+     "label": "注册",
+     "icon": "arrow_back",
+     "variant": "filled",
+     "action": {
+      "to": "back",
+      "transition": "slide"
+     }
+    }
+   ]
+  },
+  {
+   "id": "rg11",
+   "x": 508,
+   "y": 200,
+   "axis": "y",
+   "items": [
+    {
+     "id": "f12",
+     "kind": "textField",
+     "label": "用户名",
+     "icon": "person",
+     "variant": "outlined",
+     "supporting": "3-20 个字符，字母/数字/下划线/中文"
+    },
+    {
+     "id": "f13",
+     "kind": "textField",
+     "label": "邮箱",
+     "icon": "mail",
+     "variant": "outlined"
+    },
+    {
+     "id": "f14",
+     "kind": "textField",
+     "label": "密码",
+     "icon": "lock",
+     "variant": "outlined",
+     "supporting": "至少 6 位，含大写字母和数字"
+    },
+    {
+     "id": "f15",
+     "kind": "textField",
+     "label": "邀请码",
+     "icon": "redeem",
+     "variant": "outlined",
+     "supporting": "站点开启邀请制时必填"
+    },
+    {
+     "id": "b16",
+     "kind": "button",
+     "label": "注册并登录",
+     "icon": null,
+     "variant": "filled",
+     "size": 380,
+     "action": {
+      "to": "home",
+      "transition": "fade"
+     }
+    }
+   ]
+  },
+  {
+   "id": "h17",
+   "x": 984,
+   "y": 0,
+   "axis": "x",
+   "items": [
+    {
+     "id": "bar18",
+     "kind": "topAppBar",
+     "label": "CloudForum",
+     "icon": null,
+     "variant": "filled"
+    }
+   ]
+  },
+  {
+   "id": "h19",
+   "x": 1000,
+   "y": 96,
+   "axis": "x",
+   "items": [
+    {
+     "id": "c20",
+     "kind": "chip",
+     "label": "最新",
+     "icon": null,
+     "variant": "filled",
+     "checked": true
+    },
+    {
+     "id": "c21",
+     "kind": "chip",
+     "label": "热门",
+     "icon": null,
+     "variant": "tonal"
+    },
+    {
+     "id": "c22",
+     "kind": "chip",
+     "label": "浏览最多",
+     "icon": null,
+     "variant": "tonal"
+    }
+   ]
+  },
+  {
+   "id": "h23",
+   "x": 1000,
+   "y": 152,
+   "axis": "x",
+   "items": [
+    {
+     "id": "c24",
+     "kind": "chip",
+     "label": "全部",
+     "icon": null,
+     "variant": "filled",
+     "checked": true
+    },
+    {
+     "id": "c25",
+     "kind": "chip",
+     "label": "综合讨论",
+     "icon": null,
+     "variant": "tonal"
+    },
+    {
+     "id": "c26",
+     "kind": "chip",
+     "label": "技术交流",
+     "icon": null,
+     "variant": "tonal"
+    },
+    {
+     "id": "c27",
+     "kind": "chip",
+     "label": "二手市场",
+     "icon": null,
+     "variant": "tonal"
+    }
+   ]
+  },
+  {
+   "id": "h28",
+   "x": 1000,
+   "y": 216,
+   "axis": "y",
+   "items": [
+    {
+     "0": "f",
+     "1": "i",
+     "2": "l",
+     "3": "l",
+     "4": "e",
+     "5": "d",
+     "id": "p29",
+     "kind": "listItem",
+     "label": "【置顶】新同学必读：社区规范与积分规则",
+     "icon": "站务公告 · 1 天前 · 520 浏览 · 36 评论",
+     "variant": "pin"
+    },
+    {
+     "0": "f",
+     "1": "i",
+     "2": "l",
+     "3": "l",
+     "4": "e",
+     "5": "d",
+     "id": "p30",
+     "kind": "listItem",
+     "label": "如何优雅地重构一个 1000 行的 React 组件？",
+     "icon": "前端 · 3 小时前 · 328 浏览 · 42 评论",
+     "variant": "article"
+    },
+    {
+     "0": "f",
+     "1": "i",
+     "2": "l",
+     "3": "l",
+     "4": "e",
+     "5": "d",
+     "id": "p31",
+     "kind": "listItem",
+     "label": "CloudForum 上线三个月，聊聊我们踩过的坑",
+     "icon": "随笔 · 昨天 · 1204 浏览 · 87 评论",
+     "variant": "article"
+    },
+    {
+     "0": "f",
+     "1": "i",
+     "2": "l",
+     "3": "l",
+     "4": "e",
+     "5": "d",
+     "id": "p32",
+     "kind": "listItem",
+     "label": "🔒 董卓相册",
+     "icon": "资源分享 · 付费 10 积分，解锁后可查看 3 次",
+     "variant": "lock"
+    }
+   ]
+  },
+  {
+   "id": "h33",
+   "x": 1338,
+   "y": 760,
+   "axis": "x",
+   "items": [
+    {
+     "id": "fab34",
+     "kind": "fab",
+     "label": "",
+     "icon": "add",
+     "variant": "filled",
+     "note": "打开发帖表单"
+    }
+   ]
+  },
+  {
+   "id": "nav35",
+   "x": 984,
+   "y": 788,
+   "axis": "x",
+   "items": [
+    {
+     "id": "nav35b",
+     "kind": "bottomNav",
+     "label": "",
+     "icon": null,
+     "variant": "filled",
+     "tabs": [
+      {
+       "icon": "home",
+       "label": "首页"
+      },
+      {
+       "icon": "notifications",
+       "label": "通知"
+      },
+      {
+       "icon": "person",
+       "label": "我的"
+      }
+     ],
+     "selected": 0,
+     "actions": {
+      "tab:1": {
+       "to": "notifications",
+       "transition": "fade"
+      },
+      "tab:2": {
+       "to": "me",
+       "transition": "fade"
+      }
+     }
+    }
+   ]
+  },
+  {
+   "id": "pd36",
+   "x": 1476,
+   "y": 0,
+   "axis": "x",
+   "items": [
+    {
+     "id": "bar37",
+     "kind": "topAppBar",
+     "label": "帖子详情",
+     "icon": "arrow_back",
+     "variant": "filled",
+     "action": {
+      "to": "back",
+      "transition": "slide"
+     }
+    }
+   ]
+  },
+  {
+   "id": "pd38",
+   "x": 1492,
+   "y": 112,
+   "axis": "y",
+   "items": [
+    {
+     "id": "t39",
+     "kind": "text",
+     "label": "CloudForum 上线三个月，聊聊我们踩过的坑",
+     "icon": null,
+     "variant": "filled",
+     "size": 22,
+     "bold": true
+    },
+    {
+     "id": "t40",
+     "kind": "text",
+     "label": "云中君 · 站务公告 · 昨天 · 浏览 1204",
+     "icon": null,
+     "variant": "filled",
+     "size": 12
+    },
+    {
+     "id": "t41",
+     "kind": "text",
+     "label": "三个月前我从零开始搭这个论坛……（正文 Markdown 渲染，含图片与视频）",
+     "icon": null,
+     "variant": "filled",
+     "size": 15
+    }
+   ]
+  },
+  {
+   "id": "pd42",
+   "x": 1492,
+   "y": 400,
+   "axis": "x",
+   "items": [
+    {
+     "id": "b43",
+     "kind": "button",
+     "label": "点赞 128",
+     "icon": "favorite",
+     "variant": "tonal",
+     "toggle": {
+      "icon": "favorite",
+      "variant": "filled",
+      "label": "已赞 129"
+     }
+    },
+    {
+     "id": "b44",
+     "kind": "button",
+     "label": "收藏",
+     "icon": "bookmark",
+     "variant": "tonal"
+    },
+    {
+     "id": "b45",
+     "kind": "button",
+     "label": "打赏",
+     "icon": "redeem",
+     "variant": "tonal",
+     "note": "弹积分输入，打给作者"
+    },
+    {
+     "id": "b46",
+     "kind": "button",
+     "label": "举报",
+     "icon": "report",
+     "variant": "text",
+     "note": "选理由提交举报，进入人工审核"
+    }
+   ]
+  },
+  {
+   "id": "pd47",
+   "x": 1492,
+   "y": 508,
+   "axis": "y",
+   "items": [
+    {
+     "0": "f",
+     "1": "i",
+     "2": "l",
+     "3": "l",
+     "4": "e",
+     "5": "d",
+     "id": "c48",
+     "kind": "listItem",
+     "label": "拾光",
+     "icon": "写得很实在，收藏了！",
+     "variant": "account_circle"
+    },
+    {
+     "0": "f",
+     "1": "i",
+     "2": "l",
+     "3": "l",
+     "4": "e",
+     "5": "d",
+     "id": "c49",
+     "kind": "listItem",
+     "label": "Ocean",
+     "icon": "第二点深有同感",
+     "variant": "account_circle"
+    },
+    {
+     "0": "f",
+     "1": "i",
+     "2": "l",
+     "3": "l",
+     "4": "e",
+     "5": "d",
+     "id": "c50",
+     "kind": "listItem",
+     "label": "阿岚",
+     "icon": "求一篇 CI/CD 的续篇",
+     "variant": "account_circle"
+    }
+   ]
+  },
+  {
+   "id": "pd51",
+   "x": 1492,
+   "y": 708,
+   "axis": "y",
+   "items": [
+    {
+     "id": "f52",
+     "kind": "textField",
+     "label": "写下你的评论…",
+     "icon": "edit",
+     "variant": "outlined"
+    },
+    {
+     "id": "b53",
+     "kind": "button",
+     "label": "发表评论",
+     "icon": null,
+     "variant": "filled",
+     "size": 380,
+     "note": "发布后评论追加到列表顶部"
+    }
+   ]
+  },
+  {
+   "id": "cp54",
+   "x": 1968,
+   "y": 0,
+   "axis": "x",
+   "items": [
+    {
+     "id": "bar55",
+     "kind": "topAppBar",
+     "label": "发布帖子",
+     "icon": "arrow_back",
+     "variant": "filled",
+     "action": {
+      "to": "back",
+      "transition": "slide"
+     }
+    }
+   ]
+  },
+  {
+   "id": "cp56",
+   "x": 1984,
+   "y": 112,
+   "axis": "y",
+   "items": [
+    {
+     "id": "f57",
+     "kind": "textField",
+     "label": "标题",
+     "icon": "title",
+     "variant": "outlined",
+     "supporting": "1-200 字"
+    },
+    {
+     "id": "f58",
+     "kind": "textField",
+     "label": "正文",
+     "icon": "edit",
+     "variant": "outlined",
+     "supporting": "支持 Markdown：图片、视频、Bilibili"
+    },
+    {
+     "id": "s59",
+     "kind": "select",
+     "label": "选择板块",
+     "icon": null,
+     "variant": "outlined",
+     "tabs": [
+      {
+       "label": "综合讨论"
+      },
+      {
+       "label": "技术交流"
+      },
+      {
+       "label": "二手市场"
+      }
+     ],
+     "selected": 0
+    },
+    {
+     "id": "s60",
+     "kind": "switch",
+     "label": "设为付费帖（仅付费板块可选）",
+     "icon": null,
+     "variant": "filled",
+     "checked": false
+    },
+    {
+     "id": "f61",
+     "kind": "textField",
+     "label": "售价（积分）",
+     "icon": "payments",
+     "variant": "outlined",
+     "supporting": "读者支付后可查看 3 次"
+    },
+    {
+     "id": "b62",
+     "kind": "button",
+     "label": "发布",
+     "icon": null,
+     "variant": "filled",
+     "size": 380,
+     "action": {
+      "to": "postDetail",
+      "transition": "fade"
+     }
+    }
+   ]
+  },
+  {
+   "id": "nt63",
+   "x": 0,
+   "y": 1000,
+   "axis": "x",
+   "items": [
+    {
+     "id": "bar64",
+     "kind": "topAppBar",
+     "label": "通知",
+     "icon": "arrow_back",
+     "variant": "filled",
+     "action": {
+      "to": "back",
+      "transition": "slide"
+     }
+    }
+   ]
+  },
+  {
+   "id": "nt65",
+   "x": 0,
+   "y": 1100,
+   "axis": "y",
+   "items": [
+    {
+     "0": "f",
+     "1": "i",
+     "2": "l",
+     "3": "l",
+     "4": "e",
+     "5": "d",
+     "id": "n66",
+     "kind": "listItem",
+     "label": "拾光 赞了你的帖子",
+     "icon": "《CloudForum 上线三个月》 · 10 分钟前",
+     "variant": "favorite"
+    },
+    {
+     "0": "f",
+     "1": "i",
+     "2": "l",
+     "3": "l",
+     "4": "e",
+     "5": "d",
+     "id": "n67",
+     "kind": "listItem",
+     "label": "Ocean 评论了你的帖子",
+     "icon": "「写得很实在！」 · 1 小时前",
+     "variant": "comment"
+    },
+    {
+     "0": "f",
+     "1": "i",
+     "2": "l",
+     "3": "l",
+     "4": "e",
+     "5": "d",
+     "id": "n68",
+     "kind": "listItem",
+     "label": "你的帖子已通过人工复核",
+     "icon": "《TypeScript 类型体操》 · 昨天",
+     "variant": "verified"
+    },
+    {
+     "0": "f",
+     "1": "i",
+     "2": "l",
+     "3": "l",
+     "4": "e",
+     "5": "d",
+     "id": "n69",
+     "kind": "listItem",
+     "label": "管理员要求你更换绑定邮箱",
+     "icon": "请在 72 小时内完成换绑",
+     "variant": "mail"
+    }
+   ]
+  },
+  {
+   "id": "nav70",
+   "x": 0,
+   "y": 1788,
+   "axis": "x",
+   "items": [
+    {
+     "id": "nav70b",
+     "kind": "bottomNav",
+     "label": "",
+     "icon": null,
+     "variant": "filled",
+     "tabs": [
+      {
+       "icon": "home",
+       "label": "首页"
+      },
+      {
+       "icon": "notifications",
+       "label": "通知"
+      },
+      {
+       "icon": "person",
+       "label": "我的"
+      }
+     ],
+     "selected": 1,
+     "actions": {
+      "tab:0": {
+       "to": "home",
+       "transition": "fade"
+      },
+      "tab:2": {
+       "to": "me",
+       "transition": "fade"
+      }
+     }
+    }
+   ]
+  },
+  {
+   "id": "me71",
+   "x": 492,
+   "y": 1000,
+   "axis": "x",
+   "items": [
+    {
+     "id": "bar72",
+     "kind": "topAppBar",
+     "label": "我的",
+     "icon": null,
+     "variant": "filled"
+    }
+   ]
+  },
+  {
+   "id": "me73",
+   "x": 508,
+   "y": 1096,
+   "axis": "y",
+   "items": [
+    {
+     "id": "t74",
+     "kind": "text",
+     "label": "云中君",
+     "icon": null,
+     "variant": "filled",
+     "size": 20,
+     "bold": true
+    },
+    {
+     "id": "t75",
+     "kind": "text",
+     "label": "Lv.1 初学乍练 · 积分 1,280",
+     "icon": null,
+     "variant": "filled",
+     "size": 12
+    }
+   ]
+  },
+  {
+   "id": "me76",
+   "x": 508,
+   "y": 1240,
+   "axis": "y",
+   "items": [
+    {
+     "0": "f",
+     "1": "i",
+     "2": "l",
+     "3": "l",
+     "4": "e",
+     "5": "d",
+     "id": "m77",
+     "kind": "listItem",
+     "label": "每日签到",
+     "icon": "连续签到领积分，每次 +2 经验",
+     "variant": "check_circle"
+    },
+    {
+     "0": "f",
+     "1": "i",
+     "2": "l",
+     "3": "l",
+     "4": "e",
+     "5": "d",
+     "id": "m78",
+     "kind": "listItem",
+     "label": "积分钱包",
+     "icon": "余额 / 流水 / 转账",
+     "variant": "account_balance_wallet"
+    },
+    {
+     "0": "f",
+     "1": "i",
+     "2": "l",
+     "3": "l",
+     "4": "e",
+     "5": "d",
+     "id": "m79",
+     "kind": "listItem",
+     "label": "积分商城",
+     "icon": "用积分兑换道具",
+     "variant": "storefront"
+    },
+    {
+     "0": "f",
+     "1": "i",
+     "2": "l",
+     "3": "l",
+     "4": "e",
+     "5": "d",
+     "id": "m80",
+     "kind": "listItem",
+     "label": "道具仓库",
+     "icon": "我的道具与活跃效果",
+     "variant": "inventory_2"
+    },
+    {
+     "0": "f",
+     "1": "i",
+     "2": "l",
+     "3": "l",
+     "4": "e",
+     "5": "d",
+     "id": "m81",
+     "kind": "listItem",
+     "label": "幸运抽奖",
+     "icon": "SSR/SR/R/N 奖池与保底",
+     "variant": "casino"
+    },
+    {
+     "0": "f",
+     "1": "i",
+     "2": "l",
+     "3": "l",
+     "4": "e",
+     "5": "d",
+     "id": "m82",
+     "kind": "listItem",
+     "label": "排行榜",
+     "icon": "积分 Top 榜",
+     "variant": "leaderboard"
+    },
+    {
+     "0": "f",
+     "1": "i",
+     "2": "l",
+     "3": "l",
+     "4": "e",
+     "5": "d",
+     "id": "m83",
+     "kind": "listItem",
+     "label": "VIP 会员",
+     "icon": "三档会员与权益",
+     "variant": "workspace_premium"
+    },
+    {
+     "0": "f",
+     "1": "i",
+     "2": "l",
+     "3": "l",
+     "4": "e",
+     "5": "d",
+     "id": "m84",
+     "kind": "listItem",
+     "label": "我的收藏",
+     "icon": "收藏的帖子",
+     "variant": "bookmark"
+    },
+    {
+     "0": "f",
+     "1": "i",
+     "2": "l",
+     "3": "l",
+     "4": "e",
+     "5": "d",
+     "id": "m85",
+     "kind": "listItem",
+     "label": "编辑资料",
+     "icon": "用户名 / 简介 / 头衔 / 昵称主题",
+     "variant": "manage_accounts"
+    },
+    {
+     "0": "f",
+     "1": "i",
+     "2": "l",
+     "3": "l",
+     "4": "e",
+     "5": "d",
+     "id": "m86",
+     "kind": "listItem",
+     "label": "设置",
+     "icon": "通知 / 账号安全 / 注销",
+     "variant": "settings"
+    }
+   ]
+  },
+  {
+   "id": "nav87",
+   "x": 492,
+   "y": 1788,
+   "axis": "x",
+   "items": [
+    {
+     "id": "nav87b",
+     "kind": "bottomNav",
+     "label": "",
+     "icon": null,
+     "variant": "filled",
+     "tabs": [
+      {
+       "icon": "home",
+       "label": "首页"
+      },
+      {
+       "icon": "notifications",
+       "label": "通知"
+      },
+      {
+       "icon": "person",
+       "label": "我的"
+      }
+     ],
+     "selected": 2,
+     "actions": {
+      "tab:0": {
+       "to": "home",
+       "transition": "fade"
+      },
+      "tab:1": {
+       "to": "notifications",
+       "transition": "fade"
+      }
+     }
+    }
+   ]
+  },
+  {
+   "id": "pf88",
+   "x": 984,
+   "y": 1000,
+   "axis": "x",
+   "items": [
+    {
+     "id": "bar89",
+     "kind": "topAppBar",
+     "label": "个人主页",
+     "icon": "arrow_back",
+     "variant": "filled",
+     "action": {
+      "to": "back",
+      "transition": "slide"
+     }
+    }
+   ]
+  },
+  {
+   "id": "pf90",
+   "x": 984,
+   "y": 1088,
+   "axis": "x",
+   "items": [
+    {
+     "id": "b91",
+     "kind": "box",
+     "label": "",
+     "icon": null,
+     "variant": "filled",
+     "size": 412,
+     "size2": 140,
+     "fill": "primaryContainer",
+     "radiusTop": 0,
+     "radiusBottom": 0,
+     "note": "背景图区域：无图时显示品牌渐变底"
+    }
+   ]
+  },
+  {
+   "id": "pf92",
+   "x": 1000,
+   "y": 1180,
+   "axis": "x",
+   "items": [
+    {
+     "id": "i93",
+     "kind": "image",
+     "label": "",
+     "icon": null,
+     "variant": "filled",
+     "size": 72
+    }
+   ]
+  },
+  {
+   "id": "pf94",
+   "x": 1088,
+   "y": 1196,
+   "axis": "x",
+   "items": [
+    {
+     "id": "t95",
+     "kind": "text",
+     "label": "云中君",
+     "icon": null,
+     "variant": "filled",
+     "size": 22,
+     "bold": true
+    }
+   ]
+  },
+  {
+   "id": "pf96",
+   "x": 1088,
+   "y": 1240,
+   "axis": "x",
+   "items": [
+    {
+     "id": "c97",
+     "kind": "chip",
+     "label": "VIP",
+     "icon": "workspace_premium",
+     "variant": "filled"
+    },
+    {
+     "id": "c98",
+     "kind": "chip",
+     "label": "Lv.1 初学乍练",
+     "icon": null,
+     "variant": "tonal"
+    },
+    {
+     "id": "c99",
+     "kind": "chip",
+     "label": "人气王",
+     "icon": "military_tech",
+     "variant": "tonal"
+    }
+   ]
+  },
+  {
+   "id": "pf100",
+   "x": 1000,
+   "y": 1292,
+   "axis": "x",
+   "items": [
+    {
+     "id": "t101",
+     "kind": "text",
+     "label": "热爱前端与云原生，喜欢把复杂的东西讲简单。",
+     "icon": null,
+     "variant": "filled",
+     "size": 13
+    }
+   ]
+  },
+  {
+   "id": "pf102",
+   "x": 1000,
+   "y": 1324,
+   "axis": "x",
+   "items": [
+    {
+     "id": "t103",
+     "kind": "text",
+     "label": "注册于 2023-04-12 · 128 篇帖子",
+     "icon": null,
+     "variant": "filled",
+     "size": 12
+    }
+   ]
+  },
+  {
+   "id": "pf104",
+   "x": 1000,
+   "y": 1360,
+   "axis": "x",
+   "items": [
+    {
+     "id": "b105",
+     "kind": "button",
+     "label": "关注",
+     "icon": "person_add",
+     "variant": "filled",
+     "toggle": {
+      "icon": "person_remove",
+      "variant": "tonal",
+      "label": "已关注"
+     },
+     "size": 182
+    },
+    {
+     "id": "b106",
+     "kind": "button",
+     "label": "私信",
+     "icon": "mail",
+     "variant": "tonal",
+     "size": 182
+    }
+   ]
+  },
+  {
+   "id": "pf107",
+   "x": 1000,
+   "y": 1452,
+   "axis": "x",
+   "items": [
+    {
+     "id": "tb108",
+     "kind": "tabs",
+     "label": "",
+     "icon": null,
+     "variant": "filled",
+     "tabs": [
+      {
+       "icon": "article",
+       "label": "帖子"
+      },
+      {
+       "icon": "emoji_events",
+       "label": "成就"
+      }
+     ],
+     "selected": 0
+    }
+   ]
+  },
+  {
+   "id": "pf109",
+   "x": 1000,
+   "y": 1512,
+   "axis": "y",
+   "items": [
+    {
+     "0": "f",
+     "1": "i",
+     "2": "l",
+     "3": "l",
+     "4": "e",
+     "5": "d",
+     "id": "p110",
+     "kind": "listItem",
+     "label": "CloudForum 上线三个月，聊聊我们踩过的坑",
+     "icon": "随笔 · 1 天前 · 87 评论",
+     "variant": "article"
+    },
+    {
+     "0": "f",
+     "1": "i",
+     "2": "l",
+     "3": "l",
+     "4": "e",
+     "5": "d",
+     "id": "p111",
+     "kind": "listItem",
+     "label": "TypeScript 类型体操到底有没有必要学？",
+     "icon": "前端 · 3 天前 · 156 评论",
+     "variant": "article"
+    }
+   ]
+  },
+  {
+   "id": "nav112",
+   "x": 984,
+   "y": 1788,
+   "axis": "x",
+   "items": [
+    {
+     "id": "nav112b",
+     "kind": "bottomNav",
+     "label": "",
+     "icon": null,
+     "variant": "filled",
+     "tabs": [
+      {
+       "icon": "home",
+       "label": "首页"
+      },
+      {
+       "icon": "notifications",
+       "label": "通知"
+      },
+      {
+       "icon": "person",
+       "label": "我的"
+      }
+     ],
+     "selected": 2,
+     "actions": {
+      "tab:0": {
+       "to": "home",
+       "transition": "fade"
+      },
+      "tab:1": {
+       "to": "notifications",
+       "transition": "fade"
+      }
+     }
+    }
+   ]
+  },
+  {
+   "id": "ep113",
+   "x": 1476,
+   "y": 1000,
+   "axis": "x",
+   "items": [
+    {
+     "id": "bar114",
+     "kind": "topAppBar",
+     "label": "编辑资料",
+     "icon": "arrow_back",
+     "variant": "filled",
+     "action": {
+      "to": "back",
+      "transition": "slide"
+     }
+    }
+   ]
+  },
+  {
+   "id": "ep115",
+   "x": 1492,
+   "y": 2112,
+   "axis": "y",
+   "items": [
+    {
+     "id": "f116",
+     "kind": "textField",
+     "label": "用户名",
+     "icon": "person",
+     "variant": "outlined",
+     "supporting": "3-20 个字符，字母/数字/下划线/中文"
+    },
+    {
+     "id": "f117",
+     "kind": "textField",
+     "label": "个人简介",
+     "icon": "edit",
+     "variant": "outlined",
+     "supporting": "最多 500 字"
+    },
+    {
+     "id": "f118",
+     "kind": "textField",
+     "label": "自定义头衔（VIP）",
+     "icon": "badge",
+     "variant": "outlined",
+     "supporting": "最多 30 字，过期后自动移除"
+    },
+    {
+     "id": "b119",
+     "kind": "button",
+     "label": "保存资料",
+     "icon": null,
+     "variant": "filled",
+     "size": 380,
+     "action": {
+      "to": "back",
+      "transition": "slide"
+     },
+     "note": "只提交修改过的字段，成功后回上一页并提示"
+    }
+   ]
+  },
+  {
+   "id": "ck120",
+   "x": 0,
+   "y": 2000,
+   "axis": "x",
+   "items": [
+    {
+     "id": "bar121",
+     "kind": "topAppBar",
+     "label": "每日签到",
+     "icon": "arrow_back",
+     "variant": "filled",
+     "action": {
+      "to": "back",
+      "transition": "slide"
+     }
+    }
+   ]
+  },
+  {
+   "id": "ck122",
+   "x": 16,
+   "y": 2112,
+   "axis": "x",
+   "items": [
+    {
+     "id": "c123",
+     "kind": "chip",
+     "label": "第1天 +1",
+     "icon": null,
+     "variant": "tonal"
+    },
+    {
+     "id": "c124",
+     "kind": "chip",
+     "label": "第2天 +2",
+     "icon": null,
+     "variant": "tonal"
+    },
+    {
+     "id": "c125",
+     "kind": "chip",
+     "label": "第3天 +3",
+     "icon": null,
+     "variant": "tonal"
+    },
+    {
+     "id": "c126",
+     "kind": "chip",
+     "label": "第4天 +5",
+     "icon": null,
+     "variant": "tonal"
+    },
+    {
+     "id": "c127",
+     "kind": "chip",
+     "label": "第5天 +8",
+     "icon": null,
+     "variant": "tonal"
+    },
+    {
+     "id": "c128",
+     "kind": "chip",
+     "label": "第6天 +13",
+     "icon": null,
+     "variant": "tonal"
+    },
+    {
+     "id": "c129",
+     "kind": "chip",
+     "label": "第7天 +20",
+     "icon": null,
+     "variant": "filled",
+     "checked": true
+    }
+   ]
+  },
+  {
+   "id": "ck130",
+   "x": 16,
+   "y": 2260,
+   "axis": "y",
+   "items": [
+    {
+     "id": "t131",
+     "kind": "text",
+     "label": "已连续签到 3 天",
+     "icon": null,
+     "variant": "filled",
+     "size": 22,
+     "bold": true
+    },
+    {
+     "id": "t132",
+     "kind": "text",
+     "label": "今日签到可得 +3 积分 · 另加 2 经验",
+     "icon": null,
+     "variant": "filled",
+     "size": 13
+    },
+    {
+     "id": "b133",
+     "kind": "button",
+     "label": "立即签到",
+     "icon": null,
+     "variant": "filled",
+     "size": 380,
+     "note": "签到成功弹积分与经验提示；断签后连续天数归 1 重新计"
+    },
+    {
+     "id": "t134",
+     "kind": "text",
+     "label": "连续签到满 30 天解锁「全勤王」成就：+300 积分与 30 天「全勤王」称号",
+     "icon": null,
+     "variant": "filled",
+     "size": 12
+    }
+   ]
+  },
+  {
+   "id": "cn135",
+   "x": 492,
+   "y": 2000,
+   "axis": "x",
+   "items": [
+    {
+     "id": "bar136",
+     "kind": "topAppBar",
+     "label": "积分钱包",
+     "icon": "arrow_back",
+     "variant": "filled",
+     "action": {
+      "to": "back",
+      "transition": "slide"
+     }
+    }
+   ]
+  },
+  {
+   "id": "cn137",
+   "x": 508,
+   "y": 2112,
+   "axis": "y",
+   "items": [
+    {
+     "id": "t138",
+     "kind": "text",
+     "label": "当前余额 1,280 积分",
+     "icon": null,
+     "variant": "filled",
+     "size": 24,
+     "bold": true
+    },
+    {
+     "id": "t139",
+     "kind": "text",
+     "label": "今日已赚 21 分（发帖 2 次 · 签到 1 次 · 被赞 3 次）",
+     "icon": null,
+     "variant": "filled",
+     "size": 12
+    },
+    {
+     "id": "b140",
+     "kind": "button",
+     "label": "积分转账",
+     "icon": "swap_horiz",
+     "variant": "filled",
+     "size": 380,
+     "action": {
+      "to": "coinsTransfer",
+      "transition": "slide"
+     }
+    }
+   ]
+  },
+  {
+   "id": "cn141",
+   "x": 508,
+   "y": 2420,
+   "axis": "y",
+   "items": [
+    {
+     "0": "f",
+     "1": "i",
+     "2": "l",
+     "3": "l",
+     "4": "e",
+     "5": "d",
+     "id": "t142",
+     "kind": "listItem",
+     "label": "签到第 5 天",
+     "icon": "+8 积分 · 1 小时前",
+     "variant": "check_circle"
+    },
+    {
+     "0": "f",
+     "1": "i",
+     "2": "l",
+     "3": "l",
+     "4": "e",
+     "5": "d",
+     "id": "t143",
+     "kind": "listItem",
+     "label": "发布帖子",
+     "icon": "+10 积分 · 3 小时前",
+     "variant": "article"
+    },
+    {
+     "0": "f",
+     "1": "i",
+     "2": "l",
+     "3": "l",
+     "4": "e",
+     "5": "d",
+     "id": "t144",
+     "kind": "listItem",
+     "label": "转账给 阿岚",
+     "icon": "-50 积分 · 昨天",
+     "variant": "swap_horiz"
+    }
+   ]
+  },
+  {
+   "id": "ct145",
+   "x": 984,
+   "y": 2000,
+   "axis": "x",
+   "items": [
+    {
+     "id": "bar146",
+     "kind": "topAppBar",
+     "label": "积分转账",
+     "icon": "arrow_back",
+     "variant": "filled",
+     "action": {
+      "to": "back",
+      "transition": "slide"
+     }
+    }
+   ]
+  },
+  {
+   "id": "ct147",
+   "x": 1000,
+   "y": 2112,
+   "axis": "y",
+   "items": [
+    {
+     "id": "f148",
+     "kind": "textField",
+     "label": "对方用户名",
+     "icon": "person",
+     "variant": "outlined"
+    },
+    {
+     "id": "f149",
+     "kind": "textField",
+     "label": "积分数量",
+     "icon": "payments",
+     "variant": "outlined"
+    },
+    {
+     "id": "b150",
+     "kind": "button",
+     "label": "确认转账",
+     "icon": null,
+     "variant": "filled",
+     "size": 380,
+     "note": "校验余额与对方账号后到账"
+    }
+   ]
+  },
+  {
+   "id": "sh151",
+   "x": 1476,
+   "y": 2000,
+   "axis": "x",
+   "items": [
+    {
+     "id": "bar152",
+     "kind": "topAppBar",
+     "label": "积分商城",
+     "icon": "arrow_back",
+     "variant": "filled",
+     "action": {
+      "to": "back",
+      "transition": "slide"
+     }
+    }
+   ]
+  },
+  {
+   "id": "sh153",
+   "x": 1492,
+   "y": 2112,
+   "axis": "y",
+   "items": [
+    {
+     "0": "f",
+     "1": "i",
+     "2": "l",
+     "3": "l",
+     "4": "e",
+     "5": "d",
+     "id": "s154",
+     "kind": "listItem",
+     "label": "改名卡",
+     "icon": "150 积分 · 修改用户名",
+     "variant": "badge"
+    },
+    {
+     "0": "f",
+     "1": "i",
+     "2": "l",
+     "3": "l",
+     "4": "e",
+     "5": "d",
+     "id": "s155",
+     "kind": "listItem",
+     "label": "置顶卡",
+     "icon": "200 积分 · 帖子置顶 24 小时",
+     "variant": "keep"
+    },
+    {
+     "0": "f",
+     "1": "i",
+     "2": "l",
+     "3": "l",
+     "4": "e",
+     "5": "d",
+     "id": "s156",
+     "kind": "listItem",
+     "label": "头像框（30 天）",
+     "icon": "260 积分 · 限时头像框",
+     "variant": "photo_camera"
+    }
+   ]
+  },
+  {
+   "id": "wh157",
+   "x": 1968,
+   "y": 2000,
+   "axis": "x",
+   "items": [
+    {
+     "id": "bar158",
+     "kind": "topAppBar",
+     "label": "道具仓库",
+     "icon": "arrow_back",
+     "variant": "filled",
+     "action": {
+      "to": "back",
+      "transition": "slide"
+     }
+    }
+   ]
+  },
+  {
+   "id": "wh159",
+   "x": 1984,
+   "y": 2112,
+   "axis": "y",
+   "items": [
+    {
+     "0": "f",
+     "1": "i",
+     "2": "l",
+     "3": "l",
+     "4": "e",
+     "5": "d",
+     "id": "w160",
+     "kind": "listItem",
+     "label": "高亮卡 ×2",
+     "icon": "帖子列表金色高亮 24 小时 · 点击使用",
+     "variant": "highlight"
+    },
+    {
+     "0": "f",
+     "1": "i",
+     "2": "l",
+     "3": "l",
+     "4": "e",
+     "5": "d",
+     "id": "w161",
+     "kind": "listItem",
+     "label": "背景卡 ×1",
+     "icon": "更换帖子背景 · 点击使用",
+     "variant": "image"
+    },
+    {
+     "0": "f",
+     "1": "i",
+     "2": "l",
+     "3": "l",
+     "4": "e",
+     "5": "d",
+     "id": "w162",
+     "kind": "listItem",
+     "label": "活跃效果：人气王称号",
+     "icon": "剩余 5 天 · 点击摘除（不影响重新佩戴）",
+     "variant": "military_tech"
+    }
+   ]
+  },
+  {
+   "id": "wh163",
+   "x": 1984,
+   "y": 2500,
+   "axis": "x",
+   "items": [
+    {
+     "id": "b164",
+     "kind": "button",
+     "label": "批量回收选中道具",
+     "icon": "delete",
+     "variant": "tonal",
+     "size": 380,
+     "note": "勾选道具后按稀有度折算积分一次性回收"
+    }
+   ]
+  },
+  {
+   "id": "lt165",
+   "x": 0,
+   "y": 3000,
+   "axis": "x",
+   "items": [
+    {
+     "id": "bar166",
+     "kind": "topAppBar",
+     "label": "幸运抽奖",
+     "icon": "arrow_back",
+     "variant": "filled",
+     "action": {
+      "to": "back",
+      "transition": "slide"
+     }
+    }
+   ]
+  },
+  {
+   "id": "lt167",
+   "x": 16,
+   "y": 3112,
+   "axis": "y",
+   "items": [
+    {
+     "0": "f",
+     "1": "i",
+     "2": "l",
+     "3": "l",
+     "4": "e",
+     "5": "d",
+     "id": "l168",
+     "kind": "listItem",
+     "label": "SSR · 头像框「流光」",
+     "icon": "概率 2% · 抽中必得稀有头像框",
+     "variant": "workspace_premium"
+    },
+    {
+     "0": "f",
+     "1": "i",
+     "2": "l",
+     "3": "l",
+     "4": "e",
+     "5": "d",
+     "id": "l169",
+     "kind": "listItem",
+     "label": "SR · 高亮卡 ×2",
+     "icon": "概率 15%",
+     "variant": "star"
+    },
+    {
+     "0": "f",
+     "1": "i",
+     "2": "l",
+     "3": "l",
+     "4": "e",
+     "5": "d",
+     "id": "l170",
+     "kind": "listItem",
+     "label": "R · 积分 5-20",
+     "icon": "概率 83%",
+     "variant": "casino"
+    }
+   ]
+  },
+  {
+   "id": "lt171",
+   "x": 16,
+   "y": 3480,
+   "axis": "x",
+   "items": [
+    {
+     "id": "b172",
+     "kind": "button",
+     "label": "单抽 · 5 积分",
+     "icon": null,
+     "variant": "filled",
+     "size": 182,
+     "note": "弹出抽卡结果"
+    },
+    {
+     "id": "b173",
+     "kind": "button",
+     "label": "十连 · 45 积分",
+     "icon": "casino",
+     "variant": "filled",
+     "size": 182,
+     "note": "十连享折扣，结果逐条展示"
+    }
+   ]
+  },
+  {
+   "id": "lb174",
+   "x": 492,
+   "y": 3000,
+   "axis": "x",
+   "items": [
+    {
+     "id": "bar175",
+     "kind": "topAppBar",
+     "label": "积分排行榜",
+     "icon": "arrow_back",
+     "variant": "filled",
+     "action": {
+      "to": "back",
+      "transition": "slide"
+     }
+    }
+   ]
+  },
+  {
+   "id": "lb176",
+   "x": 508,
+   "y": 3112,
+   "axis": "y",
+   "items": [
+    {
+     "0": "f",
+     "1": "i",
+     "2": "l",
+     "3": "l",
+     "4": "e",
+     "5": "d",
+     "id": "l177",
+     "kind": "listItem",
+     "label": "云中君",
+     "icon": "1,280 积分",
+     "variant": "military_tech"
+    },
+    {
+     "0": "f",
+     "1": "i",
+     "2": "l",
+     "3": "l",
+     "4": "e",
+     "5": "d",
+     "id": "l178",
+     "kind": "listItem",
+     "label": "机昊xd",
+     "icon": "960 积分",
+     "variant": "military_tech"
+    },
+    {
+     "0": "f",
+     "1": "i",
+     "2": "l",
+     "3": "l",
+     "4": "e",
+     "5": "d",
+     "id": "l179",
+     "kind": "listItem",
+     "label": "初樱念",
+     "icon": "812 积分",
+     "variant": "military_tech"
+    },
+    {
+     "0": "f",
+     "1": "i",
+     "2": "l",
+     "3": "l",
+     "4": "e",
+     "5": "d",
+     "id": "l180",
+     "kind": "listItem",
+     "label": "slc0223",
+     "icon": "655 积分",
+     "variant": "person"
+    }
+   ]
+  },
+  {
+   "id": "vp181",
+   "x": 984,
+   "y": 3000,
+   "axis": "x",
+   "items": [
+    {
+     "id": "bar182",
+     "kind": "topAppBar",
+     "label": "VIP 会员",
+     "icon": "arrow_back",
+     "variant": "filled",
+     "action": {
+      "to": "back",
+      "transition": "slide"
+     }
+    }
+   ]
+  },
+  {
+   "id": "vp183",
+   "x": 1000,
+   "y": 3112,
+   "axis": "y",
+   "items": [
+    {
+     "0": "f",
+     "1": "i",
+     "2": "l",
+     "3": "l",
+     "4": "e",
+     "5": "d",
+     "id": "v184",
+     "kind": "listItem",
+     "label": "VIP · 300 积分",
+     "icon": "签到 +2 · 转账费率 10% · 上传 20MB",
+     "variant": "workspace_premium"
+    },
+    {
+     "0": "f",
+     "1": "i",
+     "2": "l",
+     "3": "l",
+     "4": "e",
+     "5": "d",
+     "id": "v185",
+     "kind": "listItem",
+     "label": "S VIP · 800 积分",
+     "icon": "签到 +3 · 费率 5% · 上传 30MB",
+     "variant": "workspace_premium"
+    },
+    {
+     "0": "f",
+     "1": "i",
+     "2": "l",
+     "3": "l",
+     "4": "e",
+     "5": "d",
+     "id": "v186",
+     "kind": "listItem",
+     "label": "S VIP+ · 2800 积分",
+     "icon": "签到 +5 · 费率 2% · 上传 50MB · 昵称主题",
+     "variant": "workspace_premium"
+    }
+   ]
+  },
+  {
+   "id": "pw187",
+   "x": 1476,
+   "y": 3000,
+   "axis": "x",
+   "items": [
+    {
+     "id": "bar188",
+     "kind": "topAppBar",
+     "label": "修改密码",
+     "icon": "arrow_back",
+     "variant": "filled",
+     "action": {
+      "to": "back",
+      "transition": "slide"
+     }
+    }
+   ]
+  },
+  {
+   "id": "pw189",
+   "x": 1492,
+   "y": 3112,
+   "axis": "y",
+   "items": [
+    {
+     "id": "f190",
+     "kind": "textField",
+     "label": "当前密码",
+     "icon": "lock",
+     "variant": "outlined"
+    },
+    {
+     "id": "f191",
+     "kind": "textField",
+     "label": "新密码",
+     "icon": "lock",
+     "variant": "outlined",
+     "supporting": "至少 6 位，含大写字母和数字"
+    },
+    {
+     "id": "f192",
+     "kind": "textField",
+     "label": "确认新密码",
+     "icon": "lock",
+     "variant": "outlined"
+    },
+    {
+     "id": "b193",
+     "kind": "button",
+     "label": "保存新密码",
+     "icon": null,
+     "variant": "filled",
+     "size": 380,
+     "action": {
+      "to": "back",
+      "transition": "slide"
+     },
+     "note": "成功后所有会话失效，需用新密码重新登录"
+    },
+    {
+     "id": "t194",
+     "kind": "text",
+     "label": "忘记当前密码？通过绑定邮箱重置",
+     "icon": null,
+     "variant": "text",
+     "action": {
+      "to": "forgotPassword",
+      "transition": "slide"
+     }
+    }
+   ]
+  },
+  {
+   "id": "ce195",
+   "x": 1968,
+   "y": 3000,
+   "axis": "x",
+   "items": [
+    {
+     "id": "bar196",
+     "kind": "topAppBar",
+     "label": "更换邮箱",
+     "icon": "arrow_back",
+     "variant": "filled",
+     "action": {
+      "to": "back",
+      "transition": "slide"
+     }
+    }
+   ]
+  },
+  {
+   "id": "ce197",
+   "x": 1984,
+   "y": 3112,
+   "axis": "y",
+   "items": [
+    {
+     "id": "f198",
+     "kind": "textField",
+     "label": "当前邮箱",
+     "icon": "mail",
+     "variant": "outlined",
+     "supporting": "yunzhongjun@example.com"
+    },
+    {
+     "id": "f199",
+     "kind": "textField",
+     "label": "新邮箱",
+     "icon": "mail",
+     "variant": "outlined",
+     "supporting": "用于登录与找回密码"
+    },
+    {
+     "id": "b200",
+     "kind": "button",
+     "label": "发送验证码",
+     "icon": "send",
+     "variant": "tonal",
+     "size": 380,
+     "note": "发 6 位验证码到新邮箱，10 分钟内有效"
+    },
+    {
+     "id": "f201",
+     "kind": "textField",
+     "label": "邮箱验证码",
+     "icon": "pin",
+     "variant": "outlined"
+    },
+    {
+     "id": "b202",
+     "kind": "button",
+     "label": "确认更换",
+     "icon": null,
+     "variant": "filled",
+     "size": 380,
+     "action": {
+      "to": "back",
+      "transition": "slide"
+     },
+     "note": "校验验证码后换绑，并登出所有设备"
+    }
+   ]
+  },
+  {
+   "id": "fg203",
+   "x": 0,
+   "y": 4000,
+   "axis": "x",
+   "items": [
+    {
+     "id": "bar204",
+     "kind": "topAppBar",
+     "label": "忘记密码",
+     "icon": "arrow_back",
+     "variant": "filled",
+     "action": {
+      "to": "back",
+      "transition": "slide"
+     }
+    }
+   ]
+  },
+  {
+   "id": "fg205",
+   "x": 16,
+   "y": 4112,
+   "axis": "y",
+   "items": [
+    {
+     "id": "f206",
+     "kind": "textField",
+     "label": "注册邮箱",
+     "icon": "mail",
+     "variant": "outlined"
+    },
+    {
+     "id": "b207",
+     "kind": "button",
+     "label": "发送验证码",
+     "icon": "send",
+     "variant": "tonal",
+     "size": 380,
+     "note": "发 6 位验证码，10 分钟内有效"
+    },
+    {
+     "id": "f208",
+     "kind": "textField",
+     "label": "验证码",
+     "icon": "pin",
+     "variant": "outlined"
+    },
+    {
+     "id": "f209",
+     "kind": "textField",
+     "label": "新密码",
+     "icon": "lock",
+     "variant": "outlined",
+     "supporting": "至少 6 位，含大写字母和数字"
+    },
+    {
+     "id": "b210",
+     "kind": "button",
+     "label": "重置密码",
+     "icon": null,
+     "variant": "filled",
+     "size": 380,
+     "action": {
+      "to": "login",
+      "transition": "fade"
+     },
+     "note": "重置成功后用新密码重新登录"
+    }
+   ]
+  }
+ ]
+}
