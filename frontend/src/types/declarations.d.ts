@@ -15,32 +15,9 @@ declare module 'react-loading-skeleton' {
   export default Skeleton;
 }
 
-declare module 'react-easy-crop' {
-  import type { FC } from 'react';
-  interface CropData {
-    x: number;
-    y: number;
-    width: number;
-    height: number;
-  }
-  interface CropperProps {
-    image: string;
-    crop: { x: number; y: number };
-    zoom: number;
-    aspect?: number;
-    onCropChange: (crop: { x: number; y: number }) => void;
-    onZoomChange: (zoom: number) => void;
-    onCropComplete?: (croppedArea: CropData, croppedAreaPixels: CropData) => void;
-    maxZoom?: number;
-    minZoom?: number;
-    style?: { containerStyle?: CSSProperties; mediaStyle?: CSSProperties };
-  }
-  const Cropper: FC<CropperProps>;
-  export default Cropper;
-  export type { CropData };
-  export type Area = CropData;
-  export type Point = { x: number; y: number };
-}
+// 注意：react-easy-crop 自带类型（index.d.ts / index.d.mts，导出 Area、Point、CropperProps 等），
+// 此前手写的 ambient 声明会遮蔽真实类型（如缺少 mediaProps，导致图片加载失败无法监听），故移除。
+// 与下方 @fortawesome 的处理一致：包自带类型时不再手写声明。
 
 // 注意：@fortawesome/* 三包自带完整类型（free-solid-svg-icons / free-regular-svg-icons 的 index.d.ts
 // 与 react-fontawesome 的 dist/index.d.ts），此前手写的 ambient 声明会遮蔽真实类型并造成
