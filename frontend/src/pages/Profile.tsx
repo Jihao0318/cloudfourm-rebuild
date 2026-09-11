@@ -516,7 +516,7 @@ export default function Profile() {
                       a.rewards && a.rewards.length > 0 ? (
                         <div className="mt-1 flex flex-wrap justify-center gap-1">
                           {a.rewards.map((r, i) => (
-                            <span key={i} className="text-[9px] bg-amber-50 text-amber-700 border border-amber-100 rounded px-1 py-0.5">{rewardLabel(r)}</span>
+                            <span key={i} className="text-[9px] bg-amber-50 text-amber-700 border border-amber-100 rounded px-1 py-0.5">{rewardLabel(r, { titleName: a.name })}</span>
                           ))}
                         </div>
                       ) : (

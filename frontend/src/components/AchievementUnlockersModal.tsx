@@ -99,7 +99,7 @@ export default function AchievementUnlockersModal({ achievement, onClose }: Prop
                 <strong className="text-gray-800 dark:text-gray-200">{total}</strong> 人达成
               </span>
               {(achievement.rewards || []).map((r, i) => (
-                <span key={i} className={`text-[10px] px-1.5 py-0.5 rounded ${meta.pill}`}>{rewardLabel(r)}</span>
+                <span key={i} className={`text-[10px] px-1.5 py-0.5 rounded ${meta.pill}`}>{rewardLabel(r, { titleName: achievement.name })}</span>
               ))}
             </div>
           </div>

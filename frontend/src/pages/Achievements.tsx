@@ -163,7 +163,7 @@ export default function Achievements() {
                       {/* 奖励 */}
                       <div className="flex flex-wrap gap-1 mt-1.5">
                         {(a.rewards || []).map((r, i) => (
-                          <span key={i} className={`text-[10px] px-1.5 py-0.5 rounded ${meta.pill}`}>{rewardLabel(r)}</span>
+                          <span key={i} className={`text-[10px] px-1.5 py-0.5 rounded ${meta.pill}`}>{rewardLabel(r, { titleName: a.name })}</span>
                         ))}
                       </div>
                       {/* 可点击提示 */}

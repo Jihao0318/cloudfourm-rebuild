@@ -21,14 +21,17 @@ export function rarityMeta(rarity: string): RarityMeta {
 }
 
 // 奖励 → 展示文案（🪙 积分 / ⚡ 经验 / 👑 称号 / 🖼️ 头像框 / 💎 VIP 券；称号永久无 days）
-export function rewardLabel(r: AchievementReward): string {
+// titleName：称号类奖励显示具体称号名（称号文本 = 成就名），避免只写「称号·7天」看不出拿到什么
+export function rewardLabel(r: AchievementReward, opts?: { titleName?: string }): string {
   switch (r.type) {
     case 'coins':
       return `🪙 +${r.amount ?? 0} 积分`;
     case 'exp':
       return `⚡ +${r.amount ?? 0} 经验`;
-    case 'title_badge':
-      return r.days ? `👑 称号·${r.days}天` : '👑 称号·永久';
+    case 'title_badge': {
+      const name = opts?.titleName ? `「${opts.titleName}」` : '';
+      return r.days ? `👑 称号${name}·${r.days}天` : `👑 称号${name}·永久`;
+    }
     case 'avatar_frame':
       return r.days ? `🖼️ 头像框·${r.days}天` : '🖼️ 头像框·永久';
     case 'vip': {
