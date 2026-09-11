@@ -152,9 +152,9 @@ export interface AchievementDef {
 export const ACHIEVEMENTS: Record<string, AchievementDef> = {
   // ── 原有 6 个：保留原积分奖励，补 rarity ──
   first_post: { name: '初来乍到', desc: '发布第一个帖子', rarity: 'bronze', rewards: [{ type: 'coins', amount: 50 }] },
-  likes_100: { name: '人气王', desc: '被点赞累计 100 次', rarity: 'silver', rewards: [{ type: 'coins', amount: 200 }] },
-  posts_100: { name: '笔耕不辍', desc: '发布帖子累计 100 篇', rarity: 'gold', rewards: [{ type: 'coins', amount: 300 }] },
-  checkin_30: { name: '全勤王', desc: '连续签到 30 天', rarity: 'silver', rewards: [{ type: 'coins', amount: 300 }] },
+  likes_100: { name: '人气王', desc: '被点赞累计 100 次', rarity: 'silver', rewards: [{ type: 'coins', amount: 200 }, { type: 'title_badge', days: 7 }] },
+  posts_100: { name: '笔耕不辍', desc: '发布帖子累计 100 篇', rarity: 'gold', rewards: [{ type: 'coins', amount: 300 }, { type: 'title_badge', days: 7 }] },
+  checkin_30: { name: '全勤王', desc: '连续签到 30 天', rarity: 'silver', rewards: [{ type: 'coins', amount: 300 }, { type: 'title_badge', days: 30 }] },
   thanks_50: { name: '热心肠', desc: '被感谢累计 50 次', rarity: 'silver', rewards: [{ type: 'coins', amount: 200 }] },
   ssr: { name: '欧皇', desc: '抽中 SSR 奖品', rarity: 'legend', rewards: [{ type: 'coins', amount: 100 }] },
   // ── 校园新增 13 个（多样化奖励）──
