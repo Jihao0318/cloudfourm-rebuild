@@ -63,39 +63,45 @@ export function setupRoutes(app: Hono<{ Bindings: Env }>) {
 
   // Auth — 无需认证: register/login/forgot/reset
   // 限流保护：认证端点 failClosed（D1 异常时拒绝而非放行），其余端点 fail-open
-  app.use('/api/auth/login', rateLimit({ windowSeconds: 60, maxRequests: 5, keyPrefix: 'login', failClosed: true }));
-  app.use('/api/auth/register', rateLimit({ windowSeconds: 3600, maxRequests: 3, keyPrefix: 'register', failClosed: true }));
-  app.use('/api/auth/verify-password', rateLimit({ windowSeconds: 60, maxRequests: 5, keyPrefix: 'verify-password', failClosed: true }));
-  app.use('/api/auth/account', rateLimit({ windowSeconds: 60, maxRequests: 3, keyPrefix: 'account' }));
-  app.use('/api/auth/username', rateLimit({ windowSeconds: 60, maxRequests: 5, keyPrefix: 'username' }));
-  app.use('/api/auth/cancel-deletion', rateLimit({ windowSeconds: 60, maxRequests: 5, keyPrefix: 'cancel-deletion' }));
-  app.use('/api/auth/refresh', rateLimit({ windowSeconds: 60, maxRequests: 10, keyPrefix: 'refresh', failClosed: true }));
+  //
+  // 阈值策略（2026-09-11 整体放宽一档）：原阈值对真实用户偏严——同宿舍/公司出口 NAT 共用一个 IP，
+  // 加上「填错也计数」，正常使用中很容易撞上限且要等整窗口。现按「比原值宽 2-3 倍」设定：
+  //   · 每分钟类：10 次/分钟（refresh 30 次，多标签页刷新 token 不能被误伤）
+  //   · 5 分钟类：验证码校验 15 次、请求/重发验证码 10 次（change-guest/request 8 次：会向任意新邮箱发信）
+  //   · 注册：10 次/小时（真正的门槛是邀请码，限流只防脚本批量刷号）
+  //   · 改密码：10 次/10 分钟（该端点已要求登录态，爆破走 /auth/login 更省事）
+  // 防护底线不变：6 位验证码 30 分钟有效，15 次/5 分钟的猜码量级仍远不足以命中。
+  app.use('/api/auth/login', rateLimit({ windowSeconds: 60, maxRequests: 10, keyPrefix: 'login', failClosed: true }));
+  app.use('/api/auth/register', rateLimit({ windowSeconds: 3600, maxRequests: 10, keyPrefix: 'register', failClosed: true }));
+  app.use('/api/auth/verify-password', rateLimit({ windowSeconds: 60, maxRequests: 10, keyPrefix: 'verify-password', failClosed: true }));
+  app.use('/api/auth/account', rateLimit({ windowSeconds: 60, maxRequests: 10, keyPrefix: 'account' }));
+  app.use('/api/auth/username', rateLimit({ windowSeconds: 60, maxRequests: 10, keyPrefix: 'username' }));
+  app.use('/api/auth/cancel-deletion', rateLimit({ windowSeconds: 60, maxRequests: 10, keyPrefix: 'cancel-deletion' }));
+  app.use('/api/auth/refresh', rateLimit({ windowSeconds: 60, maxRequests: 30, keyPrefix: 'refresh', failClosed: true }));
   // 邮箱/密码两步验证端点限流（防验证码爆破/邮件轰炸，全部 failClosed）
-  app.use('/api/auth/email/request', rateLimit({ windowSeconds: 300, maxRequests: 5, keyPrefix: 'email-request', failClosed: true }));
-  app.use('/api/auth/email/verify', rateLimit({ windowSeconds: 300, maxRequests: 5, keyPrefix: 'email-verify', failClosed: true }));
-  app.use('/api/auth/email/verify-register', rateLimit({ windowSeconds: 300, maxRequests: 5, keyPrefix: 'email-verify-register', failClosed: true }));
-  app.use('/api/auth/email/resend', rateLimit({ windowSeconds: 300, maxRequests: 3, keyPrefix: 'email-resend', failClosed: true }));
+  app.use('/api/auth/email/request', rateLimit({ windowSeconds: 300, maxRequests: 10, keyPrefix: 'email-request', failClosed: true }));
+  app.use('/api/auth/email/verify', rateLimit({ windowSeconds: 300, maxRequests: 15, keyPrefix: 'email-verify', failClosed: true }));
+  app.use('/api/auth/email/verify-register', rateLimit({ windowSeconds: 300, maxRequests: 15, keyPrefix: 'email-verify-register', failClosed: true }));
+  app.use('/api/auth/email/resend', rateLimit({ windowSeconds: 300, maxRequests: 10, keyPrefix: 'email-resend', failClosed: true }));
   // 登录前免登录验证（verify-guest）/重发（resend-guest）：验证码即凭据 + failClosed 限流防爆破/邮件轰炸
-  app.use('/api/auth/email/verify-guest', rateLimit({ windowSeconds: 300, maxRequests: 5, keyPrefix: 'email-verify-guest', failClosed: true }));
-  app.use('/api/auth/email/resend-guest', rateLimit({ windowSeconds: 300, maxRequests: 3, keyPrefix: 'email-resend-guest', failClosed: true }));
-  // 责令换邮箱流程（change_token 半登录态）：发码严限流防邮件轰炸；confirm 限流防验证码爆破
-  app.use('/api/auth/email/change-guest/request', rateLimit({ windowSeconds: 300, maxRequests: 3, keyPrefix: 'change-request', failClosed: true }));
-  app.use('/api/auth/email/change-guest/confirm', rateLimit({ windowSeconds: 300, maxRequests: 10, keyPrefix: 'change-confirm', failClosed: true }));
-  // 修改密码（当前密码一步直改）：限流防当前密码爆破
-  // 10 次/10 分钟：原为 5 次，实战中用户在「密码提示不可见」时连试几次就被锁 10 分钟；
-  // 且该端点已要求登录态（requireAuth），爆破密码走 /auth/login（5 次/分钟）更省事，
-  // 此处放宽不改变整体防护强度
+  app.use('/api/auth/email/verify-guest', rateLimit({ windowSeconds: 300, maxRequests: 15, keyPrefix: 'email-verify-guest', failClosed: true }));
+  app.use('/api/auth/email/resend-guest', rateLimit({ windowSeconds: 300, maxRequests: 10, keyPrefix: 'email-resend-guest', failClosed: true }));
+  // 责令换邮箱流程（change_token 半登录态）：request 会向「任意新邮箱」发信，保持相对严格防邮件轰炸；
+  // confirm 只做验证码校验，放宽到与其它 verify 同级
+  app.use('/api/auth/email/change-guest/request', rateLimit({ windowSeconds: 300, maxRequests: 8, keyPrefix: 'change-request', failClosed: true }));
+  app.use('/api/auth/email/change-guest/confirm', rateLimit({ windowSeconds: 300, maxRequests: 15, keyPrefix: 'change-confirm', failClosed: true }));
+  // 修改密码（当前密码一步直改）：10 次/10 分钟防当前密码爆破（该端点已要求登录态）
   app.use('/api/auth/password', rateLimit({ windowSeconds: 600, maxRequests: 10, keyPrefix: 'password-change', failClosed: true }));
-  // 忘记密码：5 分钟 3 次（防验证码爆破/邮件轰炸）
-  app.use('/api/auth/forgot', rateLimit({ windowSeconds: 300, maxRequests: 3, keyPrefix: 'forgot', failClosed: true }));
-  app.use('/api/auth/reset', rateLimit({ windowSeconds: 300, maxRequests: 5, keyPrefix: 'reset', failClosed: true }));
+  // 忘记密码 / 重置：10 次、15 次每 5 分钟（防验证码爆破/邮件轰炸）
+  app.use('/api/auth/forgot', rateLimit({ windowSeconds: 300, maxRequests: 10, keyPrefix: 'forgot', failClosed: true }));
+  app.use('/api/auth/reset', rateLimit({ windowSeconds: 300, maxRequests: 15, keyPrefix: 'reset', failClosed: true }));
   // 生成邀请码：防批量刷码（每人同时最多 1 个未使用，接口限流兜底）
-  app.use('/api/auth/invites', rateLimit({ windowSeconds: 60, maxRequests: 5, keyPrefix: 'invites' }));
+  app.use('/api/auth/invites', rateLimit({ windowSeconds: 60, maxRequests: 10, keyPrefix: 'invites' }));
   // 需认证的子路径在 handler 中用 use() 加中间件
   app.route('/api/auth', authHandler);
 
   // AI 内容审核代理 — 需登录（handler 内 requireAuth），限流防滥用
-  app.use('/api/review-content', rateLimit({ windowSeconds: 60, maxRequests: 10, keyPrefix: 'review' }));
+  app.use('/api/review-content', rateLimit({ windowSeconds: 60, maxRequests: 20, keyPrefix: 'review' }));
   app.route('/api/review-content', reviewHandler);
 
   // 巡查体系（admin + moderator）：单帖预览队列 + 多人复核制
@@ -118,7 +124,8 @@ export function setupRoutes(app: Hono<{ Bindings: Env }>) {
 
   // Upload — 需登录（父级 /api/upload* 通配符在 Hono 中不匹配子路径，
   // 鉴权在 handler 内 upload.use('*', requireAuth) 完成），限流防滥用
-  app.use('/api/upload/*', rateLimit({ windowSeconds: 60, maxRequests: 10, keyPrefix: 'upload' }));
+  // 30 次/分钟：一次发帖粘贴十几张图属正常操作，原 10 次会误伤
+  app.use('/api/upload/*', rateLimit({ windowSeconds: 60, maxRequests: 30, keyPrefix: 'upload' }));
   app.route('/api/upload', uploadHandler);
 
   // Users — profile 公开，修改需登录
@@ -144,7 +151,7 @@ export function setupRoutes(app: Hono<{ Bindings: Env }>) {
   app.use('/api/vip*', requireAuth);
   app.route('/api/vip', vipHandler);
   // Reports — 需登录（handler 内 requireAuth）；提交举报限流防刷屏
-  app.use('/api/reports/*', rateLimit({ windowSeconds: 60, maxRequests: 10, keyPrefix: 'report' }));
+  app.use('/api/reports/*', rateLimit({ windowSeconds: 60, maxRequests: 20, keyPrefix: 'report' }));
   app.use('/api/reports*', requireAuth);
   app.route('/api/reports', reportsHandler);
 
