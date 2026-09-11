@@ -11,6 +11,7 @@ const Login = lazy(() => import('./pages/Login'));
 const Register = lazy(() => import('./pages/Register'));
 const ForgotPassword = lazy(() => import('./pages/ForgotPassword'));
 const ChangeEmail = lazy(() => import('./pages/ChangeEmail'));
+const ChangePassword = lazy(() => import('./pages/ChangePassword'));
 const VerifyEmail = lazy(() => import('./pages/VerifyEmail'));
 const InviteRedirect = lazy(() => import('./pages/InviteRedirect'));
 const CreatePost = lazy(() => import('./pages/CreatePost'));
@@ -65,6 +66,7 @@ export default function App() {
         <Route path="/invite/:code" element={<Suspense fallback={<PageSkeleton />}><InviteRedirect /></Suspense>} />
         <Route path="/verify-email" element={<Suspense fallback={<PageSkeleton />}><VerifyEmail /></Suspense>} />
         <Route path="/change-email" element={<Suspense fallback={<PageSkeleton />}><ChangeEmail /></Suspense>} />
+        <Route path="/change-password" element={<Suspense fallback={<PageSkeleton />}><ChangePassword /></Suspense>} />
         <Route path="/forgot-password" element={<Suspense fallback={<PageSkeleton />}><ForgotPassword /></Suspense>} />
         <Route path="/create" element={<Suspense fallback={<PageSkeleton />}><CreatePost /></Suspense>} />
         <Route path="/post/:id" element={<Suspense fallback={<PageSkeleton />}><PostDetail /></Suspense>} />
