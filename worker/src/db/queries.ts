@@ -300,6 +300,7 @@ export async function getPostById(db: D1Database, postId: number): Promise<any |
              p.title, p.content, p.category_id, p.is_pinned, p.is_locked, p.view_count, p.like_count, p.comment_count, p.thanks_count, p.post_bg_id,
              p.created_at, p.updated_at, p.deleted_at, p.decoration_id, p.title_decoration_id,
              p.highlighted_until, p.fortune, p.title_effect, p.title_effect_expires_at, p.fortune_expires_at, p.is_essence, p.bumped_until,
+             p.effects_used_kinds, p.effects_managed_at,
              p.price, p.review_status, p.rejected_at, p.review_round,
              CASE WHEN p.is_anonymous = 1 THEN NULL ELSE u.id END AS author_id,
              CASE WHEN p.is_anonymous = 1 THEN '匿名同学' ELSE u.username END AS username,

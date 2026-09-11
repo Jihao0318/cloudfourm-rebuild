@@ -24,51 +24,64 @@ const FORTUNES = [
 
 // 回收价：VIP体验卡 30、SR/SSR 25、R 10、商城道具（user_items）5
 
-// ─── 帖子效果额度 ───
-// 同一帖子同时最多叠 MAX_POST_EFFECTS 种装饰效果（帖子背景 / 推荐卡 / 高亮卡 / 今日运势），
-// 避免单个帖子堆太多花哨效果。规则与前端 utils/postEffects.ts 保持一致：
-//   · 同一类效果已生效时再次使用（换背景、推荐卡续费、高亮/运势叠加时长）不占新额度；
-//   · 取消效果立即释放额度，取消本身不消耗任何机会；
-//   · 额度按「当前生效的效果种类数」实时计算，不用一次性标记（旧 effects_managed_at 已废弃）。
+// ─── 帖子效果管理次数（沿用旧版「固定次数」机制，次数由 1 提到 2）───
+// 每帖最多使用 MAX_POST_EFFECTS 次效果管理，即 4 种效果（帖子背景 / 推荐卡 / 高亮卡 / 今日运势）
+// 里最多选 2 种，避免单个帖子堆太多花哨效果。规则：
+//   · 次数记在 posts.effects_used_kinds（已用过的种类，逗号分隔），用完即锁，不随取消/到期回退；
+//   · 同一类效果的续期或替换（换背景、推荐卡续费、高亮叠加）不重复计数；
+//   · 取消效果不消耗、也不回退次数。
 const MAX_POST_EFFECTS = 2;
 
 export type PostEffectKind = 'bg' | 'bump' | 'highlight' | 'fortune';
 
-const EFFECT_POST_COLS = 'id, user_id, post_bg_id, bumped_until, highlighted_until, fortune_expires_at';
+const EFFECT_KIND_LABELS: Record<PostEffectKind, string> = {
+  bg: '帖子背景', bump: '推荐卡', highlight: '高亮卡', fortune: '今日运势',
+};
+
+const EFFECT_POST_COLS = 'id, user_id, effects_used_kinds';
 
 interface EffectPostRow {
   id: number;
   user_id: number;
-  post_bg_id?: number | null;
-  bumped_until?: string | null;
-  highlighted_until?: string | null;
-  fortune_expires_at?: string | null;
+  effects_used_kinds?: string | null;
 }
 
-// D1 存的是 UTC 'YYYY-MM-DD HH:MM:SS'，比较前补时区解析
-function isEffectActive(value?: string | null): boolean {
-  if (!value) return false;
-  const t = new Date(value.replace(' ', 'T') + 'Z').getTime();
-  return !isNaN(t) && t > Date.now();
+function parseUsedKinds(raw?: string | null): PostEffectKind[] {
+  if (!raw) return [];
+  return raw
+    .split(',')
+    .map(s => s.trim())
+    .filter((s): s is PostEffectKind => s === 'bg' || s === 'bump' || s === 'highlight' || s === 'fortune');
 }
 
-function activeEffectKinds(post: EffectPostRow): PostEffectKind[] {
-  const kinds: PostEffectKind[] = [];
-  if (post.post_bg_id) kinds.push('bg');
-  if (isEffectActive(post.bumped_until)) kinds.push('bump');
-  if (isEffectActive(post.highlighted_until)) kinds.push('highlight');
-  if (isEffectActive(post.fortune_expires_at)) kinds.push('fortune');
-  return kinds;
+// 拒绝文案（已用完时）
+function usedUpMessage(used: PostEffectKind[]): string {
+  const names = used.map(k => EFFECT_KIND_LABELS[k]).join('、');
+  return `该帖已用完 ${MAX_POST_EFFECTS} 次效果管理机会（${names}），不可再修改`;
 }
 
-// 额度校验：可继续使用返回 null，否则返回拒绝文案
-function effectQuotaError(post: EffectPostRow, applying: PostEffectKind): string | null {
-  const kinds = activeEffectKinds(post);
-  if (kinds.includes(applying)) return null; // 同类续期/替换不占新额度
-  if (kinds.length >= MAX_POST_EFFECTS) {
-    return `每个帖子最多同时使用 ${MAX_POST_EFFECTS} 种效果（本帖已有 ${kinds.length} 种），请先取消一个再试`;
-  }
-  return null;
+/**
+ * 消耗一次效果管理机会：可用返回 null，不可用返回拒绝文案。
+ * 同类效果已用过时直接放行（续期/替换不重复计数）。
+ * 写入用 CAS（WHERE effects_used_kinds = 读到的值）保证并发下不会重复计数。
+ */
+async function consumeEffectChance(db: D1Database, post: EffectPostRow, kind: PostEffectKind): Promise<string | null> {
+  const used = parseUsedKinds(post.effects_used_kinds);
+  if (used.includes(kind)) return null;
+  if (used.length >= MAX_POST_EFFECTS) return usedUpMessage(used);
+
+  const prev = post.effects_used_kinds ?? '';
+  const r = await db.prepare(
+    "UPDATE posts SET effects_used_kinds = ?, effects_managed_at = COALESCE(effects_managed_at, datetime('now')) WHERE id = ? AND COALESCE(effects_used_kinds, '') = ?"
+  ).bind([...used, kind].join(','), post.id, prev).run();
+  if (r.meta.changes) return null;
+
+  // 并发写入：重读后再判定一次（同一次点击/同类操作不重复计数）
+  const fresh = await db.prepare(`SELECT ${EFFECT_POST_COLS} FROM posts WHERE id = ?`).bind(post.id).first<EffectPostRow>();
+  const freshUsed = parseUsedKinds(fresh?.effects_used_kinds);
+  if (freshUsed.includes(kind)) return null;
+  if (freshUsed.length >= MAX_POST_EFFECTS) return usedUpMessage(freshUsed);
+  return '操作过于频繁，请稍后重试';
 }
 
 // ─── 回收道具（支持三表 + 按稀有度定价）───
@@ -304,11 +317,6 @@ items.post('/use/bump/:postId', requireAuth, async (c) => {
   if (!post) return c.json({ success: false, error: '帖子不存在' }, 404);
   if (post.user_id !== user.userId) return c.json({ success: false, error: '只能推荐自己的帖子' }, 403);
 
-  // 效果额度校验（推荐位已生效时属续费叠加，不占新额度）；
-  // 放在扣挤人费/消耗卡之前，避免先扣费再拒绝
-  const quotaErr = effectQuotaError(post, 'bump');
-  if (quotaErr) return c.json({ success: false, error: quotaErr }, 400);
-
   // 查找未使用的推荐卡（user_items + user_lottery_items）
   let item = await c.env.DB.prepare(`
     SELECT ui.id, 'shop' as src FROM user_items ui
@@ -324,6 +332,11 @@ items.post('/use/bump/:postId', requireAuth, async (c) => {
     `).bind(user.userId).first<{ id: number; src: string }>();
   }
   if (!item) return c.json({ success: false, error: '没有可用的推荐卡' }, 400);
+
+  // 效果管理次数（推荐位已生效时属续费，不重复计数）；
+  // 放在扣挤人费之前，避免先扣费再被次数拦下
+  const quotaErr = await consumeEffectChance(c.env.DB, post, 'bump');
+  if (quotaErr) return c.json({ success: false, error: quotaErr }, 400);
 
   const markTable = item.src === 'lottery' ? 'user_lottery_items' : 'user_items';
 
@@ -487,10 +500,6 @@ items.post('/use/post-bg/:postId', requireAuth, async (c) => {
   if (!post) return c.json({ success: false, error: '帖子不存在' }, 404);
   if (post.user_id !== user.userId) return c.json({ success: false, error: '只能更换自己帖子的背景' }, 403);
 
-  // 效果额度校验（已有背景时属同类替换，不占新额度）
-  const quotaErr = effectQuotaError(post, 'bg');
-  if (quotaErr) return c.json({ success: false, error: quotaErr }, 400);
-
   let item = await c.env.DB.prepare(`
     SELECT ui.id, 'shop' as src FROM user_items ui
     JOIN shop_items si ON ui.item_id = si.id
@@ -505,6 +514,10 @@ items.post('/use/post-bg/:postId', requireAuth, async (c) => {
     `).bind(user.userId).first<{ id: number; src: string }>();
   }
   if (!item) return c.json({ success: false, error: '没有可用的帖子背景卡' }, 400);
+
+  // 效果管理次数（已有背景时属同类替换，不重复计数）
+  const quotaErr = await consumeEffectChance(c.env.DB, post, 'bg');
+  if (quotaErr) return c.json({ success: false, error: quotaErr }, 400);
 
   const markTbl = item.src === 'lottery' ? 'user_lottery_items' : 'user_items';
   await c.env.DB.batch([
@@ -529,10 +542,6 @@ items.post('/use/highlight/:postId', requireAuth, async (c) => {
   if (!post) return c.json({ success: false, error: '帖子不存在' }, 404);
   if (post.user_id !== user.userId) return c.json({ success: false, error: '只能高亮自己的帖子' }, 403);
 
-  // 效果额度校验（已高亮时属续期叠加，不占新额度）
-  const quotaErr = effectQuotaError(post, 'highlight');
-  if (quotaErr) return c.json({ success: false, error: quotaErr }, 400);
-
   let item = await c.env.DB.prepare(`
     SELECT ui.id, 'shop' as src FROM user_items ui
     JOIN shop_items si ON ui.item_id = si.id
@@ -547,6 +556,10 @@ items.post('/use/highlight/:postId', requireAuth, async (c) => {
     `).bind(user.userId).first<{ id: number; src: string }>();
   }
   if (!item) return c.json({ success: false, error: '没有可用的高亮卡' }, 400);
+
+  // 效果管理次数（已高亮时属续期叠加，不重复计数）
+  const quotaErr = await consumeEffectChance(c.env.DB, post, 'highlight');
+  if (quotaErr) return c.json({ success: false, error: quotaErr }, 400);
 
   const markTbl = item.src === 'lottery' ? 'user_lottery_items' : 'user_items';
   await c.env.DB.batch([
@@ -576,10 +589,6 @@ items.post('/use/fortune/:postId', requireAuth, async (c) => {
   if (!post) return c.json({ success: false, error: '帖子不存在' }, 404);
   if (post.user_id !== user.userId) return c.json({ success: false, error: '只能给自己的帖子添加运势' }, 403);
 
-  // 效果额度校验（已有运势时属续期叠加，不占新额度）
-  const quotaErr = effectQuotaError(post, 'fortune');
-  if (quotaErr) return c.json({ success: false, error: quotaErr }, 400);
-
   let item = await c.env.DB.prepare(`
     SELECT ui.id, 'shop' as src FROM user_items ui
     JOIN shop_items si ON ui.item_id = si.id
@@ -594,6 +603,10 @@ items.post('/use/fortune/:postId', requireAuth, async (c) => {
     `).bind(user.userId).first<{ id: number; src: string }>();
   }
   if (!item) return c.json({ success: false, error: '没有可用的运势卡' }, 400);
+
+  // 效果管理次数（已有运势时属续期叠加，不重复计数）
+  const quotaErr = await consumeEffectChance(c.env.DB, post, 'fortune');
+  if (quotaErr) return c.json({ success: false, error: quotaErr }, 400);
 
   const fortune = FORTUNES[Math.floor(Math.random() * FORTUNES.length)];
   const markTbl = item.src === 'lottery' ? 'user_lottery_items' : 'user_items';
