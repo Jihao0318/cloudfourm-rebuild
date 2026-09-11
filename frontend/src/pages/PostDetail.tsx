@@ -60,7 +60,8 @@ export default function PostDetail() {
   // 评论加载失败独立于帖子本体错误：只在评论区位置提示，不替换整个页面
   const [commentError, setCommentError] = useState('');
   const [submitting, setSubmitting] = useState(false);
-  const [previewImage, setPreviewImage] = useState<string | null>(null);
+  // 图片预览：一组幻灯片 + 当前下标（同一图片组内的图片可左右逐张切换）
+  const [preview, setPreview] = useState<{ slides: { src: string }[]; index: number } | null>(null);
   const [bookmarked, setBookmarked] = useState(false);
   const [expandedReplies, setExpandedReplies] = useState<Record<number, boolean>>({});
   const { toast } = useToast();
@@ -307,12 +308,21 @@ export default function PostDetail() {
     } catch (err: any) { toast(err.message || '感谢失败', 'error'); }
   };
 
-  const handleImageClick = useCallback((src: string) => setPreviewImage(src), []);
+  // 点击图片：收集「同一图片组」（帖子正文容器 / 某条评论的正文容器，均带 data-img-group）
+  // 内的全部图片，按 DOM 顺序作为幻灯片，被点击那张作为初始下标 → 预览里可左右逐张切换。
+  // 用元素身份定位下标（同一 URL 出现多次也能定位到正确那张）；容器内没有头像等干扰图。
+  const handleImageClick = useCallback((el: HTMLImageElement) => {
+    const group = el.closest('[data-img-group]');
+    const imgs = (group ? [...group.querySelectorAll('img')] : [el]).filter(i => i.getAttribute('src'));
+    if (!imgs.length) return;
+    const index = Math.max(0, imgs.indexOf(el));
+    setPreview({ slides: imgs.map(i => ({ src: i.getAttribute('src') as string })), index });
+  }, []);
 
   const markdownComponents = {
     img: ({ src, alt }: { src?: string; alt?: string }) =>
       isSafeMediaSrc(src, 'img') ? (
-        <img src={src} alt={alt || ''} onClick={() => src && handleImageClick(src)}
+        <img src={src} alt={alt || ''} onClick={(e) => src && handleImageClick(e.currentTarget)}
           className="max-w-full max-h-80 md:max-h-96 w-auto rounded-lg my-3 cursor-pointer transition-opacity hover:opacity-90 object-contain" />
       ) : null,
     video: ({ src, controls }: { src?: string; controls?: boolean }) =>
@@ -396,7 +406,8 @@ export default function PostDetail() {
                 回复 <span className="text-primary-500 font-medium">@{replyTargetName}</span>
               </div>
             )}
-            <div className={`mt-1 ${depth === 0 ? 'text-gray-800' : 'text-gray-700'} prose prose-sm max-w-none`}>
+            {/* data-img-group：本评论的图片预览范围（只收集这里的图，不跨评论/正文） */}
+            <div data-img-group className={`mt-1 ${depth === 0 ? 'text-gray-800' : 'text-gray-700'} prose prose-sm max-w-none`}>
               <ReactMarkdown remarkPlugins={[remarkGfm, remarkBreaks]} rehypePlugins={[rehypeRaw, [rehypeSanitize, markdownSchema]]} components={markdownComponents}>
                 {comment.content}
               </ReactMarkdown>
@@ -653,7 +664,7 @@ export default function PostDetail() {
             </button>
           </div>
         ) : (
-          <div className="px-5 py-4 prose max-w-none">
+          <div data-img-group className="px-5 py-4 prose max-w-none">
             <ReactMarkdown remarkPlugins={[remarkGfm, remarkBreaks]} rehypePlugins={[rehypeRaw, [rehypeSanitize, markdownSchema]]} components={markdownComponents}>{post.content}</ReactMarkdown>
           </div>
         )}
@@ -911,7 +922,16 @@ export default function PostDetail() {
         document.body
       )}
 
-      <Lightbox open={!!previewImage} close={() => setPreviewImage(null)} slides={previewImage ? [{ src: previewImage }] : []} plugins={[Zoom]} zoom={{ maxZoomPixelRatio: 3, scrollToZoom: true }} />
+      <Lightbox
+        open={!!preview}
+        close={() => setPreview(null)}
+        slides={preview?.slides || []}
+        index={preview?.index ?? 0}
+        // 同步当前下标：翻到第 N 张后关闭再点第一张，仍能正确从第一张开始
+        on={{ view: ({ index }) => setPreview(p => (p && p.index !== index ? { ...p, index } : p)) }}
+        plugins={[Zoom]}
+        zoom={{ maxZoomPixelRatio: 3, scrollToZoom: true }}
+      />
       <ConfirmModal
         open={deleteConfirm}
         title="删除帖子"
