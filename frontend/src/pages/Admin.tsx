@@ -1492,19 +1492,36 @@ function SettingsPanel() {
   const [settings, setSettings] = useState<Record<string, string>>({});
   const [msg, setMsg] = useState('');
 
-  useEffect(() => { adminApi.getSettings().then(r => r.success && setSettings(r.data || {})); }, []);
+  // AI 审核键的默认值（线上 settings 无这些键时补默认渲染，保存时落库生效）
+  const AI_DEFAULTS: Record<string, string> = {
+    ai_review_enabled: 'true',
+    ai_review_timeout_ms: '15000',
+    ai_review_confidence_threshold: '70',
+    ai_review_circuit_break_threshold: '20',
+  };
+
+  useEffect(() => {
+    adminApi.getSettings().then(r => {
+      if (r.success) {
+        const data = { ...(r.data || {}) };
+        for (const [k, v] of Object.entries(AI_DEFAULTS)) if (!(k in data)) data[k] = v;
+        setSettings(data);
+      }
+    });
+  }, []);
 
   const handleSave = async () => {
     try { await adminApi.updateSettings(settings); setMsg('设置已保存'); }
     catch (err: any) { setMsg(err.message); }
   };
 
+  // 键 → 中文名
   const labels: Record<string, string> = {
-    site_name: '站点名称', site_description: '站点描述',
+    site_name: '站点名称', site_description: '站点描述', contact_email: '联系邮箱',
     registration_enabled: '允许注册', email_verification_required: '需要邮箱验证',
-    register_enabled: '允许注册(旧)', invite_only: '仅邀请注册', check_in_enabled: '签到功能',
-    post_audit_enabled: '发帖审核', default_user_coins: '新用户初始积分',
-    maintenance_mode: '维护模式', contact_email: '联系邮箱',
+    invite_only: '仅邀请注册', check_in_enabled: '签到功能',
+    default_user_coins: '新用户初始积分',
+    maintenance_mode: '维护模式',
     patrol_pass_limit: '帖子巡查-放行票数',
     patrol_violation_limit: '帖子巡查-违规票数',
     report_pass_limit: '举报审核-放行票数',
@@ -1514,10 +1531,48 @@ function SettingsPanel() {
     report_reward_coins: '举报成功奖励',
     appeal_review_level: '已下架复审等级门槛',
     soft_delete_retention_days: '软删保留天数',
+    ai_review_enabled: 'AI 审核（发帖）',
+    ai_review_timeout_ms: 'AI 审核-请求超时',
+    ai_review_confidence_threshold: 'AI 审核-置信度阈值',
+    ai_review_circuit_break_threshold: 'AI 审核-熔断阈值',
   };
+
+  // 键 → 效果说明（改了会怎么样）
+  const descs: Record<string, string> = {
+    site_name: '论坛名称，显示在浏览器标题与页面各处',
+    site_description: '论坛简介，用于站点介绍与搜索摘要',
+    contact_email: '展示给用户的联系邮箱',
+    registration_enabled: '关闭后新用户无法注册，老用户登录不受影响',
+    email_verification_required: '开启后未验证邮箱的账号会被拦在登录前，必须先完成邮箱验证',
+    invite_only: '开启后注册必须填写有效邀请码',
+    check_in_enabled: '关闭后每日签到入口与功能停用',
+    default_user_coins: '新用户注册时赠送的初始积分',
+    maintenance_mode: '开启后全站进入维护模式，仅管理员可访问',
+    patrol_pass_limit: '帖子巡查：累计收到该票数的「没问题」后放行',
+    patrol_violation_limit: '帖子巡查：累计收到该票数的「有违规」后打回作者重新编辑',
+    report_pass_limit: '举报审核：累计该票数的「没问题」后驳回举报',
+    report_violation_limit: '举报审核：累计该票数的「确认违规」后下架内容',
+    review_reject_coins: '帖子被巡查打回时扣除作者的积分（超时未修改删除时同额再扣）',
+    review_takedown_coins: '举报确认违规下架时扣除作者的积分',
+    report_reward_coins: '举报被确认有效时奖励举报人的积分（驳回不奖励）',
+    appeal_review_level: '巡查员使用「已下架复审」所需的最低巡查等级（管理员不受限）',
+    soft_delete_retention_days: '被下架/删除内容的保留天数，到期后自动物理删除（红包余额会退回）',
+    ai_review_enabled: '发帖 AI 审核总开关：开启后新帖异步送 AI 预审（不确定→待复核，确定违规→下架）',
+    ai_review_timeout_ms: '单次 AI 审核请求的超时时间（毫秒，100-60000，默认 15000）',
+    ai_review_confidence_threshold: 'AI 置信度阈值（0-100，默认 70）：AI 说没问题但低于该值→转待复核；AI 判违规且不低于该值→直接下架',
+    ai_review_circuit_break_threshold: 'AI 审核连续失败达到该次数后自动停用（1-100），在本页重新开启即可恢复',
+  };
+
+  // 布尔键：统一渲染为开关（toggle）
+  const BOOLEAN_KEYS = new Set([
+    'registration_enabled', 'email_verification_required', 'invite_only',
+    'check_in_enabled', 'maintenance_mode', 'ai_review_enabled',
+  ]);
+
   const groups: { title: string; keys: string[] }[] = [
     { title: '基础信息', keys: ['site_name', 'site_description', 'contact_email'] },
-    { title: '注册与内容', keys: ['registration_enabled', 'email_verification_required', 'register_enabled', 'invite_only', 'check_in_enabled', 'post_audit_enabled', 'default_user_coins'] },
+    { title: '注册与内容', keys: ['registration_enabled', 'email_verification_required', 'invite_only', 'check_in_enabled', 'default_user_coins'] },
+    { title: 'AI 审核（发帖）', keys: ['ai_review_enabled', 'ai_review_timeout_ms', 'ai_review_confidence_threshold', 'ai_review_circuit_break_threshold'] },
     {
       title: '巡查体系',
       keys: ['patrol_pass_limit', 'patrol_violation_limit', 'report_pass_limit', 'report_violation_limit', 'review_reject_coins', 'review_takedown_coins', 'report_reward_coins', 'appeal_review_level', 'soft_delete_retention_days'],
@@ -1525,16 +1580,40 @@ function SettingsPanel() {
     { title: '维护', keys: ['maintenance_mode'] },
   ];
   const groupedKeys = new Set(groups.flatMap(g => g.keys));
+  // 内部计数/独立专栏/废弃键：不显示在设置页（各自有专门管理入口或无调整意义）
   const smtpKeys = new Set(['smtp_host', 'smtp_port', 'smtp_user', 'smtp_pass', 'smtp_from']);
+  const hiddenKeys = new Set([
+    'smtp_host', 'smtp_port', 'smtp_user', 'smtp_pass', 'smtp_from',
+    'announcement', 'leaderboard_total', 'total_page_views', 'ai_review_fail_count',
+    'registration_open', 'require_email_verify',
+    'lottery_draw_cost', 'lottery_draw10_cost', 'lottery_rate_ssr', 'lottery_rate_sr',
+    'lottery_rate_r', 'lottery_rate_n', 'lottery_rate_ssr_boost', 'lottery_pity_soft', 'lottery_pity_hard',
+  ]);
+
+  const isOn = (v: string) => v === 'true' || v === '1';
+  const toggleValue = (cur: string) => {
+    // 写回时保持该键的历史格式（'1'/'0' 或 'true'/'false'），避免破坏消费端判定
+    if (cur === '1') return '0';
+    if (cur === '0') return '1';
+    return isOn(cur) ? 'false' : 'true';
+  };
 
   const renderField = (key: string, value: string) => (
     <div key={key}>
       <label className="block text-sm font-medium text-gray-700 mb-1">{labels[key] || key}</label>
-      {['registration_enabled','email_verification_required','register_enabled','invite_only','check_in_enabled','post_audit_enabled','maintenance_mode'].includes(key) ? (
-        <select value={value} onChange={e => setSettings({ ...settings, [key]: e.target.value })} className={inputCls}>
-          <option value="1">开启</option><option value="0">关闭</option>
-        </select>
-      ) : ['patrol_pass_limit','patrol_violation_limit','report_pass_limit','report_violation_limit'].includes(key) ? (
+      {descs[key] && <p className="text-[11px] text-gray-400 mb-1.5">{descs[key]}</p>}
+      {BOOLEAN_KEYS.has(key) ? (() => {
+        const on = isOn(value);
+        return (
+          <div className="flex items-center gap-2">
+            <button type="button" role="switch" aria-checked={on} onClick={() => setSettings({ ...settings, [key]: toggleValue(value) })}
+              className={`relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition ${on ? 'bg-primary-600' : 'bg-gray-300'}`}>
+              <span className={`inline-block h-4 w-4 transform rounded-full bg-white shadow transition ${on ? 'translate-x-6' : 'translate-x-1'}`} />
+            </button>
+            <span className={`text-xs font-medium ${on ? 'text-green-600' : 'text-gray-400'}`}>{on ? '开启' : '关闭'}</span>
+          </div>
+        );
+      })() : ['patrol_pass_limit','patrol_violation_limit','report_pass_limit','report_violation_limit'].includes(key) ? (
         <div className="flex items-center gap-2">
           <input type="number" min={1} max={10} value={value} onChange={e => setSettings({ ...settings, [key]: e.target.value })}
             className={`${inputCls} w-24`} />
@@ -1568,13 +1647,31 @@ function SettingsPanel() {
             className={`${inputCls} w-24`} />
           <span className="text-xs text-gray-400">软删帖保留天数，到期后自动物理删除（红包余额会退回）</span>
         </div>
+      ) : key === 'ai_review_timeout_ms' ? (
+        <div className="flex items-center gap-2">
+          <input type="number" min={100} max={60000} value={value} onChange={e => setSettings({ ...settings, [key]: e.target.value })}
+            className={`${inputCls} w-28`} />
+          <span className="text-xs text-gray-400">毫秒（100-60000），超时的审核会走重试</span>
+        </div>
+      ) : key === 'ai_review_confidence_threshold' ? (
+        <div className="flex items-center gap-2">
+          <input type="number" min={50} max={100} value={value} onChange={e => setSettings({ ...settings, [key]: e.target.value })}
+            className={`${inputCls} w-24`} />
+          <span className="text-xs text-gray-400">%</span>
+        </div>
+      ) : key === 'ai_review_circuit_break_threshold' ? (
+        <div className="flex items-center gap-2">
+          <input type="number" min={1} max={100} value={value} onChange={e => setSettings({ ...settings, [key]: e.target.value })}
+            className={`${inputCls} w-24`} />
+          <span className="text-xs text-gray-400">次连续失败后自动停用 AI 审核</span>
+        </div>
       ) : (
         <input type="text" value={value} onChange={e => setSettings({ ...settings, [key]: e.target.value })} className={inputCls} />
       )}
     </div>
   );
 
-  const allEntries = Object.entries(settings).filter(([key]) => !smtpKeys.has(key));
+  const allEntries = Object.entries(settings).filter(([key]) => !smtpKeys.has(key) && !hiddenKeys.has(key));
 
   return (
     <div className="max-w-xl">
