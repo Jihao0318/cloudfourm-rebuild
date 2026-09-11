@@ -363,6 +363,8 @@ posts.get('/:id', optionalAuth, async (c) => {
   const reported = (pendingReport?.cnt || 0) > 0;
 
   // 付费检查：非本人、非管理员时需要已付费
+  // 注意：巡查员（moderator）不豁免——和普通用户一样要付费解锁，
+  // 否则拥有巡查权限就能免费读全站付费帖，付费经济无法循环（管理员仅用于管理/排障）
   let requires: { type: string; price?: number } | null = null;
   let hiddenContent = post?.content;
   // 用 owner_user_id（未脱敏）判断归属，匿名帖对作者本人仍需可见
@@ -372,7 +374,7 @@ posts.get('/:id', optionalAuth, async (c) => {
     const viewer = await c.env.DB.prepare('SELECT role FROM users WHERE id = ?').bind(user.userId).first<{ role: string }>();
     viewerRole = viewer?.role;
   }
-  if (post && post.owner_user_id !== user?.userId && (!user || (viewerRole !== 'admin' && viewerRole !== 'moderator'))) {
+  if (post && post.owner_user_id !== user?.userId && (!user || viewerRole !== 'admin')) {
     if (post.price) {
       const hasPaid = await c.env.DB
         .prepare("SELECT id FROM post_access WHERE post_id = ? AND user_id = ? AND type = 'paid'")
