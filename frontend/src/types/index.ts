@@ -157,6 +157,17 @@ export interface AchievementHall {
   achievements: HallAchievement[];
 }
 
+// 某成就的达成者（GET /api/achievements/:key/unlockers，公开分页）
+export interface AchievementUnlocker {
+  id: number;
+  username: string;
+  avatar_url: string;
+  avatar_frame?: string | null;
+  avatar_frame_expires_at?: string | null;
+  exp?: number;
+  unlocked_at: string;
+}
+
 // 巡查员成就与等级（GET /api/moderation/stats；level 封顶时 expNeededForLevel 为 null 或与 expInLevel 相等）
 export interface PatrolStats {
   level: number;

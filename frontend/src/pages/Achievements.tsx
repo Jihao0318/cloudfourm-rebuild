@@ -1,11 +1,12 @@
 import { useState, useEffect, useCallback } from 'react';
 import { Helmet } from 'react-helmet-async';
 import { achievementsApi } from '../services/api';
-import type { AchievementHall } from '../types';
+import type { AchievementHall, HallAchievement } from '../types';
 import { rarityMeta, rewardLabel } from '../utils/achievements';
 import Skeleton from 'react-loading-skeleton';
 import 'react-loading-skeleton/dist/skeleton.css';
 import BackButton from '../components/BackButton';
+import AchievementUnlockersModal from '../components/AchievementUnlockersModal';
 
 type CategoryFilter = 'all' | 'campus' | 'patrol';
 
@@ -21,6 +22,8 @@ export default function Achievements() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [category, setCategory] = useState<CategoryFilter>('all');
+  // 点击成就 → 查看达成者名单
+  const [detail, setDetail] = useState<HallAchievement | null>(null);
 
   const load = useCallback(() => {
     setLoading(true);
@@ -133,8 +136,13 @@ export default function Achievements() {
                 {list.map(a => {
                   const meta = rarityMeta(a.rarity);
                   return (
-                    <div key={a.key} title={a.desc}
-                      className={`p-4 rounded-xl border transition ${a.unlocked ? 'bg-primary-50 border-primary-300' : `${meta.card} opacity-80`}`}>
+                    <button key={a.key} type="button" title={`${a.desc}（点击查看达成名单）`}
+                      onClick={() => setDetail(a)}
+                      className={`text-left w-full p-4 rounded-xl border transition cursor-pointer hover:shadow-sm ${
+                        a.unlocked
+                          ? 'bg-primary-50 border-primary-300 hover:border-primary-400'
+                          : `${meta.card} opacity-80 hover:opacity-100 hover:border-gray-300`
+                      }`}>
                       {/* 头部：勋章 + 状态标签 */}
                       <div className="flex items-center justify-between gap-2 mb-2">
                         <span className="text-xl leading-none">{meta.medal}</span>
@@ -158,7 +166,9 @@ export default function Achievements() {
                           <span key={i} className={`text-[10px] px-1.5 py-0.5 rounded ${meta.pill}`}>{rewardLabel(r)}</span>
                         ))}
                       </div>
-                    </div>
+                      {/* 可点击提示 */}
+                      <div className="text-[10px] text-gray-400 mt-2">查看达成名单 ›</div>
+                    </button>
                   );
                 })}
               </div>
@@ -166,6 +176,9 @@ export default function Achievements() {
           })()}
         </>
       )}
+
+      {/* 达成者名单弹窗（点击成就卡片打开） */}
+      <AchievementUnlockersModal achievement={detail} onClose={() => setDetail(null)} />
     </div>
   );
 }

@@ -1,4 +1,4 @@
-import type { ApiResponse, LoginResponse, Post, Comment, Category, User, PublicUser, TaskItem, AchievementInfo, AchievementHall, PatrolStats, DecorationData } from '../types';
+import type { ApiResponse, LoginResponse, Post, Comment, Category, User, PublicUser, TaskItem, AchievementInfo, AchievementHall, AchievementUnlocker, PatrolStats, DecorationData } from '../types';
 
 // 开发环境通过 Vite 代理到 localhost:8787
 // 生产环境直接请求 Worker：VITE_API_BASE 为后端地址（当前 = https://apiforum.jgp.dpdns.org，CF 优选路由）
@@ -835,6 +835,10 @@ export const achievementsApi = {
   // 成就殿堂（公开 + optionalAuth：带 token 时返回个人解锁状态，未登录 achievements 无 unlocked 字段）
   hall: () =>
     request<AchievementHall>('/achievements/hall', { method: 'GET' }),
+  // 某成就的达成者名单（公开，分页）
+  unlockers: (key: string, page: number = 1) =>
+    request<{ users: AchievementUnlocker[]; total: number; page: number; page_size: number }>(
+      `/achievements/${encodeURIComponent(key)}/unlockers?page=${page}`, { method: 'GET' }),
 };
 
 // ===== 感谢 =====
