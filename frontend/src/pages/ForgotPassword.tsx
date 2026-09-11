@@ -1,11 +1,16 @@
 import { useState, useEffect } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useToast } from '../contexts/ToastContext';
+import { useAuth } from '../contexts/AuthContext';
 import { auth } from '../services/api';
 import BackButton from '../components/BackButton';
 
 export default function ForgotPassword() {
-  const [email, setEmail] = useState('');
+  // 已登录场景（「修改密码」页 → 忘记原密码 → 通过邮箱重置）：邮箱锁定为当前账号绑定邮箱，
+  // 不允许改成别的邮箱；未登录场景才允许手动输入任意注册邮箱
+  const { user } = useAuth();
+  const lockedEmail = user?.email || '';
+  const [email, setEmail] = useState(lockedEmail);
   const [code, setCode] = useState('');
   const [newPassword, setNewPassword] = useState('');
   const [step, setStep] = useState<'email' | 'reset' | 'done'>('email');
@@ -15,6 +20,15 @@ export default function ForgotPassword() {
   const [resendCd, setResendCd] = useState(0);
   const { toast } = useToast();
   const navigate = useNavigate();
+
+  // 会话异步恢复 → 用户信息到位后回填锁定邮箱
+  useEffect(() => {
+    if (lockedEmail) setEmail(lockedEmail);
+  }, [lockedEmail]);
+
+  // 实际提交用邮箱：已登录时强制取绑定邮箱（输入框只读，即便被脚本/自动填充改值也不生效）；
+  // 未登录时才用输入框里的值
+  const effectiveEmail = (lockedEmail || email).trim();
 
   // 重发倒计时（60s 防连点）
   useEffect(() => {
@@ -29,7 +43,7 @@ export default function ForgotPassword() {
     setError('');
     setLoading(true);
     try {
-      await auth.forgot(email.trim());
+      await auth.forgot(effectiveEmail);
       setStep('reset');
       toast('验证码已发送，请查收邮箱', 'success');
     } catch (err: any) {
@@ -43,7 +57,7 @@ export default function ForgotPassword() {
     setError('');
     setLoading(true);
     try {
-      await auth.forgot(email.trim());
+      await auth.forgot(effectiveEmail);
       toast('验证码已重新发送', 'success');
       setResendCd(60);
     } catch (err: any) {
@@ -58,7 +72,7 @@ export default function ForgotPassword() {
     setError('');
     setLoading(true);
     try {
-      await auth.reset(email.trim(), code.trim(), newPassword);
+      await auth.reset(effectiveEmail, code.trim(), newPassword);
       setStep('done');
       toast('密码已重置，请重新登录', 'success');
     } catch (err: any) {
@@ -73,24 +87,40 @@ export default function ForgotPassword() {
       <div className="bg-white rounded-xl border p-8">
         {step === 'email' && (
           <>
-            <h1 className="text-2xl font-bold text-center mb-2">忘记密码</h1>
-            <p className="text-center text-sm text-gray-500 mb-6">输入注册邮箱，我们将发送 6 位验证码</p>
+            <h1 className="text-2xl font-bold text-center mb-2">{lockedEmail ? '重置密码' : '忘记密码'}</h1>
+            <p className="text-center text-sm text-gray-500 mb-6">
+              {lockedEmail ? '将向你账号绑定的邮箱发送 6 位验证码' : '输入注册邮箱，我们将发送 6 位验证码'}
+            </p>
             {error && <div className="bg-red-50 text-red-600 px-4 py-2 rounded-lg mb-4 text-sm">{error}</div>}
             <form onSubmit={handleSend} className="space-y-4">
               <div>
-                <label htmlFor="forgot-email" className="block text-sm font-medium text-gray-700 mb-1">注册邮箱</label>
+                <label htmlFor="forgot-email" className="block text-sm font-medium text-gray-700 mb-1">
+                  {lockedEmail ? '账号绑定邮箱' : '注册邮箱'}
+                </label>
                 <input
                   id="forgot-email"
                   type="email"
                   value={email}
-                  onChange={(e) => setEmail(e.target.value)}
+                  onChange={(e) => {
+                    // 已登录：只读兜底——脚本/浏览器自动填充绕过 readOnly 改值时直接撤销
+                    if (lockedEmail) { e.target.value = lockedEmail; return; }
+                    setEmail(e.target.value);
+                  }}
+                  readOnly={!!lockedEmail}
+                  aria-readonly={!!lockedEmail}
                   autoComplete="email"
                   autoCapitalize="none"
                   autoCorrect="off"
-                  className="w-full px-3 py-2 text-base border rounded-lg focus:border-primary-500 outline-none"
+                  title={lockedEmail ? '已登录账号的绑定邮箱，不可修改' : undefined}
+                  className={`w-full px-3 py-2 text-base border rounded-lg outline-none ${
+                    lockedEmail ? 'bg-gray-50 text-gray-500 cursor-not-allowed' : 'focus:border-primary-500'
+                  }`}
                   required
                   placeholder="you@example.com"
                 />
+                {!!lockedEmail && (
+                  <p className="text-xs text-gray-400 mt-1">已登录账号的绑定邮箱，不可修改；如需换绑请到个人设置里的「更换邮箱」</p>
+                )}
               </div>
               <button type="submit" disabled={loading} className="w-full bg-primary-600 text-white py-2.5 rounded-lg font-medium hover:bg-primary-700 disabled:opacity-50">
                 {loading ? '发送中...' : '发送验证码'}
@@ -102,7 +132,7 @@ export default function ForgotPassword() {
         {step === 'reset' && (
           <>
             <h1 className="text-2xl font-bold text-center mb-2">重置密码</h1>
-            <p className="text-center text-sm text-gray-500 mb-6">验证码已发送至 {email}，10 分钟内有效</p>
+            <p className="text-center text-sm text-gray-500 mb-6">验证码已发送至 {effectiveEmail}，10 分钟内有效</p>
             {error && <div className="bg-red-50 text-red-600 px-4 py-2 rounded-lg mb-4 text-sm">{error}</div>}
             <form onSubmit={handleReset} className="space-y-4">
               <div>

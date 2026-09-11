@@ -105,7 +105,7 @@ export default function ChangePassword() {
             {loading ? '提交中...' : '确认修改'}
           </button>
           <p className="text-center text-xs text-gray-400">
-            忘记密码？<button type="button" onClick={() => navigate('/forgot-password')} className="text-primary-600 hover:underline">通过邮箱重置</button>
+            忘记原密码？<button type="button" onClick={() => navigate('/forgot-password')} className="text-primary-600 hover:underline">通过绑定邮箱重置</button>
           </p>
         </form>
       </div>
