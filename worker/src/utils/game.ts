@@ -192,8 +192,10 @@ export async function grantRewards(db: D1Database, userId: number, key: string):
             await addExp(db, userId, r.amount || 0);
             break;
           case 'title_badge':
-            // title_badge 存称号文本（如 '校园红人'）；days 省略视为永久
-            await grantTitleBadge(db, userId, name, r.days);
+            // 称号只入库、不自动佩戴：拥有关系由「已解锁成就 + 奖励定义」推导
+            // （utils/decoration.ts 的 getOwnedTitles，到期时间 = 解锁时间 + days），
+            // 用户可到「活跃效果」页自行佩戴（POST /items/equip-title-badge）。
+            // 因此这里不需要写 users.title_badge —— 那会让称号强行顶掉用户当前的佩戴。
             break;
           case 'avatar_frame':
             await grantAvatarFrame(db, userId, r.days || 1);
@@ -210,24 +212,6 @@ export async function grantRewards(db: D1Database, userId: number, key: string):
     }
   } catch (e) {
     console.error(`grantRewards failed: ${key}`, e);
-  }
-}
-
-// 称号奖励：有时长则与现有未过期时长叠加，否则从当前时间起算；永久称号 expires_at 置 NULL
-async function grantTitleBadge(db: D1Database, userId: number, badge: string, days?: number): Promise<void> {
-  if (days && days > 0) {
-    await db.prepare(`
-      UPDATE users SET title_badge = ?,
-        title_badge_expires_at = CASE
-          WHEN title_badge_expires_at IS NOT NULL AND title_badge_expires_at > datetime('now')
-            THEN datetime(title_badge_expires_at, '+' || ? || ' days')
-          ELSE datetime('now', '+' || ? || ' days')
-        END
-      WHERE id = ?
-    `).bind(badge, days, days, userId).run();
-  } else {
-    await db.prepare('UPDATE users SET title_badge = ?, title_badge_expires_at = NULL WHERE id = ?')
-      .bind(badge, userId).run();
   }
 }
 

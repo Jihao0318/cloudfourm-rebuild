@@ -1000,7 +1000,7 @@ items.post('/equip-title-badge', requireAuth, async (c) => {
     return c.json({ success: false, error: '该称号已过期' }, 400);
   }
 
-  // 永久称号 expires_at 置 NULL，与 grantTitleBadge 的永久写法一致
+  // 永久称号 expires_at 置 NULL
   await c.env.DB.prepare('UPDATE users SET title_badge = ?, title_badge_expires_at = ? WHERE id = ?')
     .bind(title, target.expiresAt, user.userId).run();
   return c.json({ success: true, message: `已佩戴称号「${title}」` });
