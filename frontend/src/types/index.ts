@@ -85,7 +85,7 @@ export interface Post {
   requires?: { type: string; price?: number };
   // 帖子背景 / 感谢 / 红包（列表字段）
   post_bg_id?: number | null;
-  effects_managed_at?: string | null; // 效果管理一次性机会（非空=已使用）
+  effects_managed_at?: string | null; // 已废弃：旧的「效果管理一次性机会」标记；现按生效效果种类数实时计算额度（见 utils/postEffects.ts）
   thanks_count?: number;
   author_exp?: number | null;
   red_packet_coins?: number | null;

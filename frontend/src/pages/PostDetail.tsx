@@ -8,6 +8,7 @@ import { levelFromExp } from '../utils/level';
 import { posts as postsApi, comments as commentsApi, likes as likesApi, reports as reportsApi, bookmarks as bookmarksApi, tips as tipsApi, decorations as decorationsApi, shop as shopApi, thanksApi, items as itemsApi } from '../services/api';
 import type { Post, Comment } from '../types';
 import { postBgClass } from '../utils/postBg';
+import { effectQuota } from '../utils/postEffects';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import remarkBreaks from 'remark-breaks';
@@ -142,7 +143,7 @@ export default function PostDetail() {
   const [likeAnim, setLikeAnim] = useState(false);
   // 取消红包确认弹窗（仅发帖人）
   const [cancelRpOpen, setCancelRpOpen] = useState(false);
-  // 效果管理弹窗（仅发帖人，每帖一次机会）
+  // 效果管理弹窗（仅发帖人；同帖最多同时生效 2 种效果）
   const [effectModalOpen, setEffectModalOpen] = useState(false);
   // 抢红包排行榜（展开查看）
   const [rpOpen, setRpOpen] = useState(false);
@@ -609,13 +610,21 @@ export default function PostDetail() {
                 <button onClick={() => setDeleteConfirm(true)} className="text-xs text-gray-500 hover:text-red-500 border px-2.5 py-1 rounded-lg transition">删除</button>
               </>
             )}
-            {/* 效果管理：发帖后一次性管理帖子背景/装饰（每帖仅一次机会） */}
-            {post.is_owner && (
-              <button onClick={() => setEffectModalOpen(true)}
-                className="text-xs text-gray-500 hover:text-primary-600 border px-2.5 py-1 rounded-lg transition">
-                效果管理
-              </button>
-            )}
+            {/* 效果管理：管理本帖背景/装饰；同帖最多同时生效 2 种效果，按钮上直接显示剩余额度 */}
+            {post.is_owner && (() => {
+              const q = effectQuota(post);
+              return (
+                <button onClick={() => setEffectModalOpen(true)}
+                  className="text-xs text-gray-500 hover:text-primary-600 border px-2.5 py-1 rounded-lg transition">
+                  效果管理
+                  <span className={`ml-1.5 px-1.5 py-0.5 rounded text-[10px] font-medium ${
+                    q.remaining > 0 ? 'bg-blue-50 text-blue-600' : 'bg-amber-50 text-amber-600'
+                  }`}>
+                    余 {q.remaining}/{q.max}
+                  </span>
+                </button>
+              );
+            })()}
           </div>
         </div>
         {post.reported && (
@@ -939,7 +948,7 @@ export default function PostDetail() {
         onConfirm={handleCancelRedPacket}
         onCancel={() => setCancelRpOpen(false)}
       />
-      {/* 效果管理（每帖一次机会） */}
+      {/* 效果管理（同帖最多同时生效 2 种效果） */}
       <PostEffectModal
         open={effectModalOpen}
         post={post}
