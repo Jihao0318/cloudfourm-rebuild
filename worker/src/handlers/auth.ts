@@ -234,8 +234,10 @@ function maskEmail(email: string): string {
   return `${masked}@${domain}`;
 }
 
-// 登录失败计数：fail_count >= 10 锁 30 分钟，>= 5 锁 15 分钟；锁定时清零，到期后重新计数
-// 锁定时长加入随机抖动（±5 分钟），避免攻击者按固定节奏循环锁号（DoS 缓解）
+// 登录失败计数：fail_count >= 15 锁 20 分钟，>= 8 锁 5 分钟；锁定时清零，到期后重新计数
+// 锁定时长加入随机抖动，避免攻击者按固定节奏循环锁号（DoS 缓解）
+// 2026-09-11 放宽：原为 >=10 锁 30 分钟 / >=5 锁 15 分钟——正常用户连打几次错字就被锁太久；
+// 该机制只锁单个账号（不牵连他人）+ IP 限流仍在，放宽后防护依旧充分
 async function recordLoginFailure(db: D1Database, userId: number): Promise<void> {
   await db.prepare(
     'INSERT INTO login_attempts (user_id, fail_count, locked_until) VALUES (?, 1, NULL) ON CONFLICT(user_id) DO UPDATE SET fail_count = fail_count + 1'
@@ -243,10 +245,10 @@ async function recordLoginFailure(db: D1Database, userId: number): Promise<void>
   const attempts = await db.prepare('SELECT fail_count FROM login_attempts WHERE user_id = ?').bind(userId).first<{ fail_count: number }>();
   const count = attempts?.fail_count || 1;
   const jitter = (crypto.getRandomValues(new Uint32Array(1))[0] % 10); // 锁定时长随机抖动，防固定节奏循环锁号
-  if (count >= 10) {
-    await db.prepare(`UPDATE login_attempts SET locked_until = datetime('now', '+${30 + jitter} minutes'), fail_count = 0 WHERE user_id = ?`).bind(userId).run();
-  } else if (count >= 5) {
-    await db.prepare(`UPDATE login_attempts SET locked_until = datetime('now', '+${15 + jitter} minutes'), fail_count = 0 WHERE user_id = ?`).bind(userId).run();
+  if (count >= 15) {
+    await db.prepare(`UPDATE login_attempts SET locked_until = datetime('now', '+${20 + jitter} minutes'), fail_count = 0 WHERE user_id = ?`).bind(userId).run();
+  } else if (count >= 8) {
+    await db.prepare(`UPDATE login_attempts SET locked_until = datetime('now', '+${5 + (jitter % 5)} minutes'), fail_count = 0 WHERE user_id = ?`).bind(userId).run();
   }
 }
 
