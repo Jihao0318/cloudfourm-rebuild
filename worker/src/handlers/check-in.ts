@@ -78,9 +78,9 @@ checkIn.post('/', requireAuth, async (c) => {
   // 写入新流水后立即收敛：每用户只保留最近 15 条
   await cleanupTransactions(c.env.DB, user.userId);
 
-  // 引擎一/二/三：签到 +10 经验、标记"签到"任务、全勤王成就（钩子失败不影响签到主流程）
+  // 引擎一/二/三：签到 +2 经验、标记"签到"任务、全勤王成就（钩子失败不影响签到主流程）
   await Promise.all([
-    addExp(c.env.DB, user.userId, 10),
+    addExp(c.env.DB, user.userId, 2),
     markTaskDone(c.env.DB, user.userId, 'checkin'),
     streak >= 30 ? unlockAchievement(c.env.DB, user.userId, 'checkin_30') : Promise.resolve(),
   ]).catch((e) => { console.error('check-in achievement hook failed', e); });
