@@ -47,7 +47,7 @@ coins.get('/today-earnings', requireAuth, async (c) => {
   const startStr = startUtc.toISOString().replace('T', ' ').slice(0, 19);
   const endStr = endUtc.toISOString().replace('T', ' ').slice(0, 19);
 
-  // 仅统计日上限相关的活动收入类型
+  // 统计今日活动收入（签到/发帖/评论/被赞）——已取消每日总上限，此处仅作展示
   const EARNING_TYPES = ['check_in', 'post', 'comment', 'liked'];
   const placeholders = EARNING_TYPES.map(() => '?').join(',');
 
@@ -70,7 +70,6 @@ coins.get('/today-earnings', requireAuth, async (c) => {
     success: true,
     data: {
       today_total: totalRow?.total || 0,
-      daily_max: DAILY_MAX_COINS,
       details: (rows.results || []).map(r => ({ type: r.type, amount: r.total, count: r.cnt })),
     },
   });
@@ -229,18 +228,18 @@ coins.post('/transfer', requireAuth, async (c) => {
   return c.json({ success: true, message: `转账成功！转出 ${totalDeduct} 积分（含手续费 ${fee}）` });
 });
 
-// 各品类每日次数上限（含品类限额 + 总积分上限）
-// coins_per 必须与实际发放一致：comment 实际 +3（comments.ts）、liked 实际 +2（likes.ts）
-// check_in 实际发放 = 阶梯基础奖励(最高 20) + VIP 加成(最高 5)，取上限 25 计入总量检查
-const DAILY_LIMITS: Record<string, { max_times: number; coins_per: number }> = {
-  post: { max_times: 2, coins_per: 10 },
-  comment: { max_times: 5, coins_per: 3 },
-  liked: { max_times: 5, coins_per: 2 },
-  check_in: { max_times: 1, coins_per: 25 },
+// 各品类每日次数上限
+// 2026-09-11 取消「每日总积分上限 50」：原实现会把当天全部正向收入（含抽奖中奖/抢红包/成就奖励/
+// 升级礼包/打赏/转账）都算进总量，导致用户当天赚过 26 分以上时签到一分不发，与直觉不符。
+// 现只保留每类次数限制（这才是防刷分的自然边界），任何"该发的奖励"都实发。
+const DAILY_LIMITS: Record<string, { max_times: number }> = {
+  post: { max_times: 2 },
+  comment: { max_times: 5 },
+  liked: { max_times: 5 },
+  check_in: { max_times: 1 },
 };
-const DAILY_MAX_COINS = 50;
 
-// 检查今日是否还能获得该品类奖励（品类限额 + 总积分上限）
+// 检查今日是否还能获得该品类奖励（仅按品类次数）
 export async function canEarnToday(db: D1Database, userId: number, type: string): Promise<boolean> {
   const limit = DAILY_LIMITS[type];
   if (!limit) return false;
@@ -257,17 +256,12 @@ export async function canEarnToday(db: D1Database, userId: number, type: string)
   const startStr = startUtc.toISOString().replace('T', ' ').slice(0, 19);
   const endStr = endUtc.toISOString().replace('T', ' ').slice(0, 19);
 
-  // 合并统计：品类次数 + 今日总收入（一条 SQL，用 UTC 时间范围）
-  // 退款类流水（红包取消/解封退回）是返还用户自己的钱，不计入"今日可赚取"上限
   const stats = await db
-    .prepare(`SELECT 
-      COUNT(CASE WHEN type = ? THEN 1 END) as cnt,
-      COALESCE(SUM(CASE WHEN amount > 0 AND type NOT IN ('red_packet_refund', 'unban_refund') THEN amount ELSE 0 END), 0) as total
+    .prepare(`SELECT COUNT(CASE WHEN type = ? THEN 1 END) as cnt
       FROM coin_transactions WHERE user_id = ? AND created_at >= ? AND created_at < ?`)
     .bind(type, userId, startStr, endStr)
-    .first<{ cnt: number; total: number }>();
+    .first<{ cnt: number }>();
   if ((stats?.cnt || 0) >= limit.max_times) return false;
-  if ((stats?.total || 0) + limit.coins_per > DAILY_MAX_COINS) return false;
 
   return true;
 }

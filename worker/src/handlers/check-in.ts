@@ -1,7 +1,7 @@
 import { Hono } from 'hono';
 import type { Env, JWTPayload } from '../types';
 import { requireAuth } from '../middleware/auth';
-import { addCoins, canEarnToday, cleanupTransactions } from './coins';
+import { cleanupTransactions } from './coins';
 import { addExp, markTaskDone, unlockAchievement } from '../utils/game';
 
 // 统一使用 UTC+8 业务时区计算"今天"
@@ -68,23 +68,15 @@ checkIn.post('/', requireAuth, async (c) => {
   const bonus = (vipInfo && bonusMap[vipInfo.tier]) || 0;
   coinsEarned += bonus;
 
-  // 检查日上限 50 分：超限则签到不加积分（仅记录）
-  const canEarn = await canEarnToday(c.env.DB, user.userId, 'check_in');
-  const actualCoins = canEarn ? coinsEarned : 0;
-
+  // 签到奖励必定发放（已取消每日总积分上限）：阶梯奖励 + VIP 加成，最低 1 分
   // 原子更新签到记录 + 加积分
-  const batchStmts: any[] = [
-    c.env.DB.prepare('UPDATE check_ins SET streak = ?, coins_earned = ? WHERE user_id = ? AND check_in_date = ?').bind(streak, actualCoins, user.userId, today),
-  ];
-  if (actualCoins > 0) {
-    batchStmts.push(
-      c.env.DB.prepare('UPDATE user_balances SET coins = coins + ?, total_earned = total_earned + ? WHERE user_id = ?').bind(actualCoins, actualCoins, user.userId),
-      c.env.DB.prepare("INSERT INTO coin_transactions (user_id, type, amount, balance_after, description) SELECT ?, 'check_in', ?, coins, ? FROM user_balances WHERE user_id = ?").bind(user.userId, actualCoins, `签到第 ${streak} 天${bonus > 0 ? `（VIP加成 ${bonus}）` : ''}`, user.userId),
-    );
-  }
-  await c.env.DB.batch(batchStmts);
+  await c.env.DB.batch([
+    c.env.DB.prepare('UPDATE check_ins SET streak = ?, coins_earned = ? WHERE user_id = ? AND check_in_date = ?').bind(streak, coinsEarned, user.userId, today),
+    c.env.DB.prepare('UPDATE user_balances SET coins = coins + ?, total_earned = total_earned + ? WHERE user_id = ?').bind(coinsEarned, coinsEarned, user.userId),
+    c.env.DB.prepare("INSERT INTO coin_transactions (user_id, type, amount, balance_after, description) SELECT ?, 'check_in', ?, coins, ? FROM user_balances WHERE user_id = ?").bind(user.userId, coinsEarned, `签到第 ${streak} 天${bonus > 0 ? `（VIP加成 ${bonus}）` : ''}`, user.userId),
+  ]);
   // 写入新流水后立即收敛：每用户只保留最近 15 条
-  if (actualCoins > 0) await cleanupTransactions(c.env.DB, user.userId);
+  await cleanupTransactions(c.env.DB, user.userId);
 
   // 引擎一/二/三：签到 +10 经验、标记"签到"任务、全勤王成就（钩子失败不影响签到主流程）
   await Promise.all([
@@ -93,15 +85,13 @@ checkIn.post('/', requireAuth, async (c) => {
     streak >= 30 ? unlockAchievement(c.env.DB, user.userId, 'checkin_30') : Promise.resolve(),
   ]).catch((e) => { console.error('check-in achievement hook failed', e); });
 
-  const msg = actualCoins > 0
-    ? `签到成功！连续 ${streak} 天，获得 ${actualCoins} 积分${actualCoins < coinsEarned ? `（日上限限制，少得 ${coinsEarned - actualCoins}）` : ''}`
-    : `签到成功！连续 ${streak} 天（今日积分已达上限，未获得额外积分）`;
+  const msg = `签到成功！连续 ${streak} 天，获得 ${coinsEarned} 积分`;
 
   return c.json({
     success: true,
     data: {
       streak,
-      coins_earned: actualCoins,
+      coins_earned: coinsEarned,
       message: msg,
     },
   });
