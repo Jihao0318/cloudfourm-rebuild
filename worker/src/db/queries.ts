@@ -799,8 +799,9 @@ export async function verifyCode(
 
   if (!latest) return false;
 
-  // 防爆破：连续 5 次错误即作废该验证码（配合 IP 限流），防止 6 位数字码被暴力猜解
-  if ((latest.fail_count || 0) >= 5) {
+  // 防爆破：连续 10 次错误即作废该验证码（配合 IP 限流），防止 6 位数字码被暴力猜解
+  // （2026-09-11 放宽：原为 5 次，与放宽后的 IP 限流（verify 15 次/5 分钟）保持一致）
+  if ((latest.fail_count || 0) >= 10) {
     await db.prepare('UPDATE verifications SET used = 1 WHERE id = ?').bind(latest.id).run();
     return false;
   }
