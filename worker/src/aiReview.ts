@@ -236,7 +236,9 @@ export async function consumeAiReviewMessage(postId: number, env: Env): Promise<
       // AI 判定只作为参考（巡查卡片展示「AI 判定无问题 + 置信度」，数据来自 ai_review_logs）
       await writeAiReviewLog(db, { post, verdict: normVerdict, action: 'approved' });
     } else {
-      // 确定 + flag → AI 下架（软删；后台保留期内的申诉机制仍在 appeals.ts，但通知里不给申诉引导）
+      // 确定 + flag → AI 下架（软删）：帖子确实被下架，通知里要保留申诉入口，
+      // 故用 post_takedown 类型（前端对该类型展开后渲染「如有异议，请点击下方申诉」+ 申诉按钮，
+      // 与手动下架的通知一致）；申诉通过后 appeals.ts 自动恢复并回 pending 重新巡查
       const reason = (verdict.summary || (verdict.reasons || []).join('；') || '违规内容').slice(0, 200);
       const upd = await db
         .prepare("UPDATE posts SET deleted_at = datetime('now'), flagged_by = 'ai', flagged_reason = ? WHERE id = ? AND review_status IN ('pending','cleared')")
@@ -246,7 +248,7 @@ export async function consumeAiReviewMessage(postId: number, env: Env): Promise<
         const shortTitle = (post.title || '').slice(0, 30);
         const content = `🚫 你的帖子「${shortTitle}」因违规被 AI 下架（原因：${reason}）`;
         try {
-          await createNotification(db, post.user_id, null, 'system', postId, undefined, content);
+          await createNotification(db, post.user_id, null, 'post_takedown', postId, undefined, content);
         } catch (e) {
           console.error(`ai_review.notify_failed post=${postId}:`, e);
         }
