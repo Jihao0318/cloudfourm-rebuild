@@ -203,7 +203,14 @@ export default function Profile() {
       setAvatarUploading(true); setError('');
       try {
         const r = await uploadApi.image(file);
-        if (r.success && r.data) { await usersApi.updateAvatar(r.data.url); await refreshUser(); setMessage('头像已更新'); }
+        if (r.success && r.data) {
+          const avatarUrl = r.data.url;
+          await usersApi.updateAvatar(avatarUrl);
+          // 本地同步主页头像，否则要刷新页面才能看到新头像（与背景图更新保持一致）
+          setProfileUser(prev => prev ? { ...prev, avatar_url: avatarUrl } : prev);
+          await refreshUser();
+          setMessage('头像已更新');
+        }
         else setError(r.error || '上传失败');
       } catch (err: any) { setError(err.message); }
       setAvatarUploading(false);
@@ -933,7 +940,7 @@ export default function Profile() {
       </div>
       {cropModal && (
         <CropModal
-          image={URL.createObjectURL(cropModal.file)}
+          file={cropModal.file}
           aspect={cropModal.aspect}
           onCrop={handleCropDone}
           onCancel={() => setCropModal(null)}
