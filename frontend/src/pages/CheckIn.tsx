@@ -22,7 +22,7 @@ export default function CheckIn() {
   const { user, loading: authLoading } = useAuth();
   const { toast } = useToast();
   const navigate = useNavigate();
-  const [todayStatus, setTodayStatus] = useState<{ checked_in: boolean; streak: number; coins_earned: number } | null>(null);
+  const [todayStatus, setTodayStatus] = useState<{ checked_in: boolean; streak: number; coins_earned: number; enabled?: boolean } | null>(null);
   const [stats, setStats] = useState<{ total_days: number; month_days: number; current_streak: number; month_dates: string[] } | null>(null);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState('');
@@ -113,7 +113,11 @@ export default function CheckIn() {
             <p className="text-sm text-gray-500 mb-4">
               连续签到 <strong className="text-primary-600">{todayStatus?.streak || stats?.current_streak || 0}</strong> 天
             </p>
-            {!todayStatus?.checked_in ? (
+            {todayStatus?.enabled === false ? (
+              <p className="text-sm text-amber-600 bg-amber-50 border border-amber-200 rounded-lg px-4 py-2.5">
+                签到功能已关闭（后台「系统设置 → 注册与内容 → 签到功能」可重新开启）
+              </p>
+            ) : !todayStatus?.checked_in ? (
               <button onClick={handleCheckIn} disabled={checking}
                 className="bg-primary-600 text-white px-8 py-3 rounded-xl font-medium hover:bg-primary-700 disabled:opacity-50 transition text-lg">
                 {checking ? '签到中...' : '签到'}

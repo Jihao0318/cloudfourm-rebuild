@@ -599,7 +599,7 @@ export const admin = {
 
 // Check-In
 export const checkIn = {
-  today: (date?: string) => request<{ checked_in: boolean; streak: number; coins_earned: number }>(`/check-in/today${date ? `?date=${date}` : ''}`),
+  today: (date?: string) => request<{ checked_in: boolean; streak: number; coins_earned: number; enabled?: boolean }>(`/check-in/today${date ? `?date=${date}` : ''}`),
   do: (date?: string) => request<{ streak: number; coins_earned: number; message: string }>('/check-in', { method: 'POST', body: JSON.stringify({ date }) }),
   stats: (date?: string) => request<{ total_days: number; month_days: number; current_streak: number; month_dates: string[] }>(`/check-in/stats${date ? `?date=${date}` : ''}`),
 };

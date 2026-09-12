@@ -3,6 +3,14 @@ import type { Env, JWTPayload } from '../types';
 import { requireAuth } from '../middleware/auth';
 import { cleanupTransactions } from './coins';
 import { addExp, markTaskDone, unlockAchievement } from '../utils/game';
+import { getSetting } from '../db/queries';
+
+// 签到功能开关（后台「签到功能」settings.check_in_enabled）：未设置视为开启（与既有行为一致）
+async function checkInEnabled(db: D1Database): Promise<boolean> {
+  const v = await getSetting(db, 'check_in_enabled');
+  if (v === null || v === undefined || v === '') return true;
+  return v === '1' || v === 'true';
+}
 
 // 统一使用 UTC+8 业务时区计算"今天"
 function getServerToday(): string {
@@ -32,6 +40,9 @@ const checkIn = new Hono<{ Bindings: Env }>();
 // 签到
 checkIn.post('/', requireAuth, async (c) => {
   const user: JWTPayload = c.get('user');
+  if (!(await checkInEnabled(c.env.DB))) {
+    return c.json({ success: false, error: '签到功能已关闭' }, 403);
+  }
   const { date } = await c.req.json<{ date?: string }>();
   const today = getDate(date);
   const yesterday = getYesterday(today);
@@ -113,6 +124,8 @@ checkIn.get('/today', requireAuth, async (c) => {
       checked_in: !!record,
       streak: record?.streak || 0,
       coins_earned: record?.coins_earned || 0,
+      // 后台「签到功能」关闭时，前端据此禁用签到按钮并给出说明
+      enabled: await checkInEnabled(c.env.DB),
     },
   });
 });
