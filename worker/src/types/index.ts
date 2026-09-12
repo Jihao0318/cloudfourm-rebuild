@@ -263,8 +263,6 @@ export interface Env {
   QUEUE?: Queue<{ postId: number }>;
   /** 审核后端 service binding（可选，未配置走公网 JUDGE_API_URL） */
   JUDGE?: Fetcher;
-  /** Gemini 审核后端 service binding（forum-ai-gemini）；由 settings ai_review_backend 选择，未绑定则该后端不可用 */
-  JUDGE_GEMINI?: Fetcher;
   /** 邮件网关 service binding（可选，未配置走公网 MAILER_URL） */
   MAILER?: Fetcher;
 }

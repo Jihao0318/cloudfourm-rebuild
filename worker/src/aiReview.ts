@@ -1,8 +1,7 @@
 // ============================================================
 // AI 异步审核（Cloudflare Queues 消费端）
 // 链路：发帖成功 → QUEUE.send({postId})（posts.ts producer）→ 本文件消费：
-//       读 settings 开关 + 审核后端（ai_review_backend）→ 读帖 → 调 judge
-//       （JUDGE_API_URL/JUDGE_API_KEY secrets；后端 binding：JUDGE=forum-ai / JUDGE_GEMINI=forum-ai-gemini）→
+//       读 settings 开关 → 读帖 → 调 judge（JUDGE_API_URL/JUDGE_API_KEY secrets）→
 //       三档置信度分流（阈值 ai_review_confidence_threshold，默认 70）：
 //       不确定 → questionable 进「待复核」；确定 + pass → cleared 直接通过；
 //       确定 + flag → 软删下架（可申诉恢复）→ 通知作者。
@@ -43,28 +42,9 @@ async function numSetting(db: D1Database, key: string, fallback: number, min: nu
   return Number.isFinite(n) && n >= min && n <= max ? n : fallback;
 }
 
-// 审核后端：workers-ai = JUDGE(forum-ai)，gemini = JUDGE_GEMINI(forum-ai-gemini)。
-// 由 settings ai_review_backend 选择（管理后台可切换）；未设置或非法值一律按 workers-ai
-type JudgeBackend = 'workers-ai' | 'gemini';
-
-/**
- * 按后台设置选择审核后端绑定。选中的绑定缺失（未部署/未绑定）时回退到另一个并记日志 ——
- * 宁可走另一个后端，也不让审核链路断掉。
- */
-function pickJudgeBinding(env: Env, backend: JudgeBackend): Fetcher {
-  const primary = backend === 'gemini' ? env.JUDGE_GEMINI : env.JUDGE;
-  const fallback = backend === 'gemini' ? env.JUDGE : env.JUDGE_GEMINI;
-  if (primary) return primary;
-  if (fallback) {
-    console.error(`ai_review.binding_missing backend=${backend}，已回退到另一个绑定`);
-    return fallback;
-  }
-  throw new Error('JUDGE/JUDGE_GEMINI 均未绑定，无法执行 AI 审核');
-}
-
 // 调用 judge 审核端点：POST env.JUDGE_API_URL（secrets JUDGE_API_KEY 走 x-judge-key header）
 // 任何失败（非 2xx / 非 JSON / status==='error' / verdict 非法）一律 throw → 触发队列内置重试
-async function callJudge(post: Pick<ReviewPostRow, 'title' | 'content'>, env: Env, timeoutMs: number, backend: JudgeBackend): Promise<JudgeVerdict> {
+async function callJudge(post: Pick<ReviewPostRow, 'title' | 'content'>, env: Env, timeoutMs: number): Promise<JudgeVerdict> {
   if (!env.JUDGE_API_URL || !env.JUDGE_API_KEY) {
     throw new Error('JUDGE_API_URL/JUDGE_API_KEY 未配置，无法执行 AI 审核');
   }
@@ -79,20 +59,18 @@ async function callJudge(post: Pick<ReviewPostRow, 'title' | 'content'>, env: En
     // 超时由 settings ai_review_timeout_ms 控制（默认 5s）：judge 挂起时快速失败走队列重试
     signal: AbortSignal.timeout(timeoutMs),
   };
-  // 双通道：有审核后端 service binding 时走绑定（service binding 要求绝对 URL，host 不解析，
-  // 故 JUDGE / JUDGE_GEMINI 共用同一个 JUDGE_API_URL —— 只有路径 /api/judge 有意义）；
-  // 两个都没绑定时走公网 fetch。binding 返回 5xx 或抛错（本地 dev 无目标服务/线上偶发）时回退公网重试一次；
-  // 4xx 直接按失败处理
+  // 双通道：配置了 JUDGE service binding 时走绑定（service binding 要求绝对 URL，host 不解析）；
+  // 未绑定时走公网 fetch（JUDGE_API_URL 是自定义域名，不受 workers.dev 1042 子请求限制）。
+  // binding 通道返回 5xx 或抛错（本地 dev 无目标服务/线上偶发）时回退公网重试一次；4xx 直接按失败处理
   const classifyFetchErr = (err: any): Error => {
     if (err?.name === 'AbortError' || err?.name === 'TimeoutError') return new Error(`请求超时（${timeoutMs}ms）`);
     return new Error(`网络请求失败：${err?.message || '未知错误'}`);
   };
   let res: Response;
   try {
-    if (env.JUDGE || env.JUDGE_GEMINI) {
+    if (env.JUDGE) {
       try {
-        const binding = pickJudgeBinding(env, backend);
-        const bindingRes = await binding.fetch(new Request(env.JUDGE_API_URL, init));
+        const bindingRes = await env.JUDGE.fetch(new Request(env.JUDGE_API_URL, init));
         if (bindingRes.status < 500) {
           res = bindingRes;
         } else {
@@ -137,8 +115,7 @@ async function callJudge(post: Pick<ReviewPostRow, 'title' | 'content'>, env: En
 }
 
 // 熔断记录：ai_review_fail_count +1 写 settings；连续失败达阈值（ai_review_circuit_break_threshold，
-// 默认 20，范围 1-100）：默认后端 → 关 ai_review_enabled（写 'false'），后续消息走「开关关闭 → 跳过」的静默路径；
-// Gemini 后端 → 自动切回 workers-ai 并清零计数（保持审核开启，不让实验后端故障停掉整条审核链）。
+// 默认 20，范围 1-100）自动关 ai_review_enabled（写 'false'），让后续消息走「开关关闭 → 跳过」的静默路径。
 // 内部整体 try/catch 只 console.error——记录失败绝不能打断「先记后抛」流程：
 // 原始错误的 throw 由调用方负责（本函数只记录，不抛不吞）。
 async function recordAiReviewFailure(env: Env, postId: number, cause: unknown): Promise<void> {
@@ -150,16 +127,8 @@ async function recordAiReviewFailure(env: Env, postId: number, cause: unknown): 
     const next = count + 1;
     await setSetting(db, 'ai_review_fail_count', String(next));
     if (next >= threshold) {
-      // 当前是实验后端（Gemini）→ 自动切回默认后端并清零计数，保持 AI 审核开启
-      const currentBackend = (await getSetting(db, 'ai_review_backend')) === 'gemini' ? 'gemini' : 'workers-ai';
-      if (currentBackend === 'gemini') {
-        await setSetting(db, 'ai_review_backend', 'workers-ai');
-        await setSetting(db, 'ai_review_fail_count', '0');
-        console.error(`ai_review.backend_auto_fallback post=${postId}: 连续失败 ${next} 次，已自动切回 workers-ai`, cause);
-      } else {
-        await setSetting(db, 'ai_review_enabled', 'false');
-        console.error(`ai_review.circuit_break post=${postId}: 连续失败 ${next} 次，已自动关闭 ai_review_enabled`, cause);
-      }
+      await setSetting(db, 'ai_review_enabled', 'false');
+      console.error(`ai_review.circuit_break post=${postId}: 连续失败 ${next} 次，已自动关闭 ai_review_enabled`, cause);
     } else {
       console.error(`ai_review.record_failure post=${postId} (${next}/${threshold}):`, cause);
     }
@@ -177,15 +146,13 @@ async function writeAiReviewLog(
     post: Pick<ReviewPostRow, 'id' | 'user_id' | 'title'>;
     verdict?: Omit<JudgeVerdict, 'confidence'> & { confidence?: number | null };
     action: 'approved' | 'uncertain' | 'takedown' | 'failed';
-    /** 判定后端（留痕，便于对比 Workers AI / Gemini 的判定差异） */
-    backend?: JudgeBackend;
     error?: string;
   }
 ): Promise<void> {
   try {
     await db.batch([
       db.prepare(
-        'INSERT INTO ai_review_logs (post_id, post_title, author_id, verdict, confidence, reasons, summary, action, error, backend) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
+        'INSERT INTO ai_review_logs (post_id, post_title, author_id, verdict, confidence, reasons, summary, action, error) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)'
       ).bind(
         entry.post.id,
         (entry.post.title || '').slice(0, 200),
@@ -196,7 +163,6 @@ async function writeAiReviewLog(
         entry.verdict?.summary ?? null,
         entry.action,
         entry.error ?? null,
-        entry.backend ?? null,
       ),
       // 只保留最近 20 条：每次插入后同批次修剪，表恒 ≤20 行
       db.prepare('DELETE FROM ai_review_logs WHERE id NOT IN (SELECT id FROM ai_review_logs ORDER BY id DESC LIMIT 20)'),
@@ -215,11 +181,6 @@ export async function consumeAiReviewMessage(postId: number, env: Env): Promise<
   const enabled = (await getSetting(db, 'ai_review_enabled')) ?? 'true';
   if (enabled !== 'true') return;
 
-  // 1.5 审核后端选择（管理后台可切换，settings ai_review_backend）：未设置或非法值一律按默认 workers-ai。
-  //     在读帖之前确定并记录，便于按日志排查某条消息由哪个后端处理
-  const backend: JudgeBackend = (await getSetting(db, 'ai_review_backend')) === 'gemini' ? 'gemini' : 'workers-ai';
-  console.log(`ai_review.backend_selected backend=${backend} post=${postId}`);
-
   // 2. 读帖：消费侧重读内容（producer 只投 postId，避免大消息）；已软删 → 跳过
   const post = await db
     .prepare('SELECT id, user_id, title, content, review_status FROM posts WHERE id = ? AND deleted_at IS NULL')
@@ -235,7 +196,7 @@ export async function consumeAiReviewMessage(postId: number, env: Env): Promise<
 
   // 5. 调 judge：任何 throw → 外层 catch 记熔断计数后 re-throw（走队列重试，max_retries=3）
   try {
-    const verdict = await callJudge(post, env, timeoutMs, backend);
+    const verdict = await callJudge(post, env, timeoutMs);
 
     // 6. 置信度三档分流（阈值 settings ai_review_confidence_threshold，0-100 整数，默认 70）：
     //    - 不确定（confidence 缺失或低于阈值，无论 verdict）→ questionable 进「待复核」，人工裁决
@@ -269,11 +230,11 @@ export async function consumeAiReviewMessage(postId: number, env: Env): Promise<
           console.error(`ai_review.notify_failed post=${postId}:`, e);
         }
       }
-      await writeAiReviewLog(db, { post, verdict: normVerdict, action: 'uncertain', backend });
+      await writeAiReviewLog(db, { post, verdict: normVerdict, action: 'uncertain' });
     } else if (verdict.verdict === 'pass') {
       // 确定 + pass → **不改状态**：帖子保持 pending 照常进「待巡查」队列走人工投票；
       // AI 判定只作为参考（巡查卡片展示「AI 判定无问题 + 置信度」，数据来自 ai_review_logs）
-      await writeAiReviewLog(db, { post, verdict: normVerdict, action: 'approved', backend });
+      await writeAiReviewLog(db, { post, verdict: normVerdict, action: 'approved' });
     } else {
       // 确定 + flag → AI 下架（软删）：帖子确实被下架，通知里要保留申诉入口，
       // 故用 post_takedown 类型（前端对该类型展开后渲染「如有异议，请点击下方申诉」+ 申诉按钮，
@@ -292,7 +253,7 @@ export async function consumeAiReviewMessage(postId: number, env: Env): Promise<
           console.error(`ai_review.notify_failed post=${postId}:`, e);
         }
       }
-      await writeAiReviewLog(db, { post, verdict: normVerdict, action: 'takedown', backend });
+      await writeAiReviewLog(db, { post, verdict: normVerdict, action: 'takedown' });
     }
 
     // 7. 任一成功即清零失败计数（熔断「连续失败」语义）
@@ -303,7 +264,6 @@ export async function consumeAiReviewMessage(postId: number, env: Env): Promise<
     await writeAiReviewLog(db, {
       post,
       action: 'failed',
-      backend,
       error: e instanceof Error ? e.message.slice(0, 300) : String(e).slice(0, 300),
     });
     throw e;

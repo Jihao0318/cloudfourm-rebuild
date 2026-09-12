@@ -1498,7 +1498,6 @@ function SettingsPanel() {
     ai_review_timeout_ms: '15000',
     ai_review_confidence_threshold: '70',
     ai_review_circuit_break_threshold: '20',
-    ai_review_backend: 'workers-ai',
   };
 
   useEffect(() => {
@@ -1533,7 +1532,6 @@ function SettingsPanel() {
     appeal_review_level: '已下架复审等级门槛',
     soft_delete_retention_days: '软删保留天数',
     ai_review_enabled: 'AI 审核（发帖）',
-    ai_review_backend: 'AI 审核-后端',
     ai_review_timeout_ms: 'AI 审核-请求超时',
     ai_review_confidence_threshold: 'AI 审核-置信度阈值',
     ai_review_circuit_break_threshold: 'AI 审核-熔断阈值',
@@ -1560,7 +1558,6 @@ function SettingsPanel() {
     appeal_review_level: '巡查员使用「已下架复审」所需的最低巡查等级（管理员不受限）',
     soft_delete_retention_days: '被下架/删除内容的保留天数，到期后自动物理删除（红包余额会退回）',
     ai_review_enabled: '发帖 AI 审核总开关：开启后新帖异步送 AI 预审（不确定→待复核，确定违规→下架）',
-    ai_review_backend: '选择由谁来审核：Cloudflare Workers AI（默认）或 Gemini。两者判定契约完全一致，保存后下一条待审帖子即生效，无需重新部署',
     ai_review_timeout_ms: '单次 AI 审核请求的超时时间（毫秒，100-60000，默认 15000）',
     ai_review_confidence_threshold: 'AI 置信度阈值（0-100，默认 70）：AI 说没问题但低于该值→转待复核；AI 判违规且不低于该值→直接下架',
     ai_review_circuit_break_threshold: 'AI 审核连续失败达到该次数后自动停用（1-100），在本页重新开启即可恢复',
@@ -1575,7 +1572,7 @@ function SettingsPanel() {
   const groups: { title: string; keys: string[] }[] = [
     { title: '基础信息', keys: ['site_name', 'site_description', 'contact_email'] },
     { title: '注册与内容', keys: ['registration_enabled', 'email_verification_required', 'invite_only', 'check_in_enabled', 'default_user_coins'] },
-    { title: 'AI 审核（发帖）', keys: ['ai_review_enabled', 'ai_review_backend', 'ai_review_timeout_ms', 'ai_review_confidence_threshold', 'ai_review_circuit_break_threshold'] },
+    { title: 'AI 审核（发帖）', keys: ['ai_review_enabled', 'ai_review_timeout_ms', 'ai_review_confidence_threshold', 'ai_review_circuit_break_threshold'] },
     {
       title: '巡查体系',
       keys: ['patrol_pass_limit', 'patrol_violation_limit', 'report_pass_limit', 'report_violation_limit', 'review_reject_coins', 'review_takedown_coins', 'report_reward_coins', 'appeal_review_level', 'soft_delete_retention_days'],
@@ -1667,14 +1664,6 @@ function SettingsPanel() {
           <input type="number" min={1} max={100} value={value} onChange={e => setSettings({ ...settings, [key]: e.target.value })}
             className={`${inputCls} w-24`} />
           <span className="text-xs text-gray-400">次连续失败后自动停用 AI 审核</span>
-        </div>
-      ) : key === 'ai_review_backend' ? (
-        <div className="flex items-center gap-2">
-          <select value={value} onChange={e => setSettings({ ...settings, [key]: e.target.value })} className={`${inputCls} w-56`}>
-            <option value="workers-ai">Cloudflare Workers AI（默认）</option>
-            <option value="gemini">Gemini</option>
-          </select>
-          <span className="text-xs text-gray-400">保存后下一条待审帖子生效</span>
         </div>
       ) : (
         <input type="text" value={value} onChange={e => setSettings({ ...settings, [key]: e.target.value })} className={inputCls} />

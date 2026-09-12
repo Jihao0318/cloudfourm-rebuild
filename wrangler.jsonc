@@ -9,11 +9,8 @@
 
   // 内部服务 binding：同账号 worker 间公网互调被 CF 1042 拒绝，
   // 走 binding 内网通道（env.JUDGE / env.MAILER 优先，未配置才回退公网 URL）
-  // 两个审核后端并存：JUDGE = Workers AI（forum-ai），JUDGE_GEMINI = Gemini（forum-ai-gemini）；
-  // 用哪个由 settings ai_review_backend 决定（管理后台可切换，未设置则走 JUDGE）
   "services": [
     { "binding": "JUDGE", "service": "forum-ai" },
-    { "binding": "JUDGE_GEMINI", "service": "forum-ai-gemini" },
     { "binding": "MAILER", "service": "mailer" }
   ],
 

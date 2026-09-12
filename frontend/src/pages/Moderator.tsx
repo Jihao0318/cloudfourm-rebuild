@@ -693,7 +693,6 @@ function AiLogsTab() {
             <div className="mt-2 flex flex-wrap gap-x-3 gap-y-1 text-xs text-gray-500">
               <span>作者：{l.author_name || (l.author_id ? `#${l.author_id}` : '匿名/已注销')}</span>
               {l.confidence != null && <span>置信度：{Math.round(l.confidence * 100)}%</span>}
-              {l.backend && <span>后端：{l.backend === 'gemini' ? 'Gemini' : 'Workers AI'}</span>}
               {l.verdict && <span>AI 判定：{l.verdict === 'pass' ? '无问题' : '检出问题'}</span>}
               {reasons.length > 0 && <span>原因：{reasons.join('、')}</span>}
               <span>当前状态：{l.post_deleted ? '已删除' : (statusText[l.current_status] || l.current_status || '不存在')}</span>
