@@ -234,7 +234,7 @@ export async function listPosts(
   const [pinnedResult, normalResult] = await Promise.all([
     db
       .prepare(`
-        SELECT p.id, CASE WHEN p.is_anonymous = 1 AND ? = 0 THEN NULL ELSE p.user_id END AS user_id, p.is_anonymous, p.title, p.content, p.category_id, p.is_pinned, p.is_locked, p.view_count, p.like_count, p.comment_count, p.thanks_count, p.post_bg_id, p.created_at, p.updated_at, p.price, p.highlighted_until, p.fortune, p.title_effect, CASE WHEN p.is_anonymous = 1 AND ? = 0 THEN '匿名同学' ELSE u.username END AS username, CASE WHEN p.is_anonymous = 1 AND ? = 0 THEN '' ELSE u.avatar_url END AS author_avatar, CASE WHEN p.is_anonymous = 1 AND ? = 0 THEN NULL ELSE u.banned_until END AS author_banned_until,
+        SELECT p.id, CASE WHEN p.is_anonymous = 1 AND ? = 0 THEN NULL ELSE p.user_id END AS user_id, p.is_anonymous, p.title, p.content, p.category_id, p.is_pinned, p.is_locked, p.view_count, p.like_count, p.comment_count, p.thanks_count, p.post_bg_id, (SELECT rp.remaining_packets FROM red_packets rp WHERE rp.post_id = p.id ORDER BY rp.id DESC LIMIT 1) AS red_packet_remaining_packets, p.created_at, p.updated_at, p.price, p.highlighted_until, p.fortune, p.title_effect, CASE WHEN p.is_anonymous = 1 AND ? = 0 THEN '匿名同学' ELSE u.username END AS username, CASE WHEN p.is_anonymous = 1 AND ? = 0 THEN '' ELSE u.avatar_url END AS author_avatar, CASE WHEN p.is_anonymous = 1 AND ? = 0 THEN NULL ELSE u.banned_until END AS author_banned_until,
                CASE WHEN p.is_anonymous = 1 AND ? = 0 THEN NULL ELSE u.nick_theme END AS author_nick_theme,
                CASE WHEN p.is_anonymous = 1 AND ? = 0 THEN NULL ELSE u.exp END AS author_exp,
                CASE WHEN p.is_anonymous = 1 AND ? = 0 THEN NULL ELSE u.avatar_frame END AS author_avatar_frame,
@@ -258,7 +258,7 @@ export async function listPosts(
       .all(),
     db
       .prepare(`
-        SELECT p.id, CASE WHEN p.is_anonymous = 1 AND ? = 0 THEN NULL ELSE p.user_id END AS user_id, p.is_anonymous, p.title, p.content, p.category_id, p.is_pinned, p.is_locked, p.view_count, p.like_count, p.comment_count, p.thanks_count, p.post_bg_id, p.effects_managed_at, p.created_at, p.updated_at, p.deleted_at, p.decoration_id, p.title_decoration_id, p.highlighted_until, p.fortune, p.fortune_expires_at, p.title_effect, p.title_effect_expires_at, p.bumped_until, p.price, CASE WHEN p.is_anonymous = 1 AND ? = 0 THEN '匿名同学' ELSE u.username END AS username, CASE WHEN p.is_anonymous = 1 AND ? = 0 THEN '' ELSE u.avatar_url END AS author_avatar, CASE WHEN p.is_anonymous = 1 AND ? = 0 THEN NULL ELSE u.banned_until END AS author_banned_until,
+        SELECT p.id, CASE WHEN p.is_anonymous = 1 AND ? = 0 THEN NULL ELSE p.user_id END AS user_id, p.is_anonymous, p.title, p.content, p.category_id, p.is_pinned, p.is_locked, p.view_count, p.like_count, p.comment_count, p.thanks_count, p.post_bg_id, (SELECT rp.remaining_packets FROM red_packets rp WHERE rp.post_id = p.id ORDER BY rp.id DESC LIMIT 1) AS red_packet_remaining_packets, p.effects_managed_at, p.created_at, p.updated_at, p.deleted_at, p.decoration_id, p.title_decoration_id, p.highlighted_until, p.fortune, p.fortune_expires_at, p.title_effect, p.title_effect_expires_at, p.bumped_until, p.price, CASE WHEN p.is_anonymous = 1 AND ? = 0 THEN '匿名同学' ELSE u.username END AS username, CASE WHEN p.is_anonymous = 1 AND ? = 0 THEN '' ELSE u.avatar_url END AS author_avatar, CASE WHEN p.is_anonymous = 1 AND ? = 0 THEN NULL ELSE u.banned_until END AS author_banned_until,
                CASE WHEN p.is_anonymous = 1 AND ? = 0 THEN NULL ELSE u.nick_theme END AS author_nick_theme,
                CASE WHEN p.is_anonymous = 1 AND ? = 0 THEN NULL ELSE u.exp END AS author_exp,
                CASE WHEN p.is_anonymous = 1 AND ? = 0 THEN NULL ELSE u.avatar_frame END AS author_avatar_frame,
@@ -297,7 +297,7 @@ export async function getPostById(db: D1Database, postId: number): Promise<any |
       SELECT p.id,
              CASE WHEN p.is_anonymous = 1 THEN NULL ELSE p.user_id END AS user_id,
              p.user_id AS owner_user_id, p.is_anonymous,
-             p.title, p.content, p.category_id, p.is_pinned, p.is_locked, p.view_count, p.like_count, p.comment_count, p.thanks_count, p.post_bg_id,
+             p.title, p.content, p.category_id, p.is_pinned, p.is_locked, p.view_count, p.like_count, p.comment_count, p.thanks_count, p.post_bg_id, (SELECT rp.remaining_packets FROM red_packets rp WHERE rp.post_id = p.id ORDER BY rp.id DESC LIMIT 1) AS red_packet_remaining_packets,
              p.created_at, p.updated_at, p.deleted_at, p.decoration_id, p.title_decoration_id,
              p.highlighted_until, p.fortune, p.title_effect, p.title_effect_expires_at, p.fortune_expires_at, p.is_essence, p.bumped_until,
              p.effects_used_kinds, p.effects_managed_at,
