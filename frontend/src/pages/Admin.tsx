@@ -1520,8 +1520,7 @@ function SettingsPanel() {
     site_name: '站点名称', site_description: '站点描述', contact_email: '联系邮箱',
     registration_enabled: '允许注册', email_verification_required: '需要邮箱验证',
     invite_only: '仅邀请注册', check_in_enabled: '签到功能',
-    default_user_coins: '新用户初始积分',
-    maintenance_mode: '维护模式',
+    default_user_coins: '新用户初始积分', invite_reward_coins: '邀请奖励积分',
     patrol_pass_limit: '帖子巡查-放行票数',
     patrol_violation_limit: '帖子巡查-违规票数',
     report_pass_limit: '举报审核-放行票数',
@@ -1545,9 +1544,9 @@ function SettingsPanel() {
     registration_enabled: '关闭后新用户无法注册，老用户登录不受影响',
     email_verification_required: '开启后未验证邮箱的账号会被拦在登录前，必须先完成邮箱验证',
     invite_only: '开启后注册必须填写有效邀请码；关闭后可不填直接注册，但用户主动填写有效邀请码时邀请人依然获得邀请奖励',
-    check_in_enabled: '关闭后每日签到入口与功能停用',
+    check_in_enabled: '关闭后每日签到入口与功能停用（签到端点会拒绝请求，页面显示已关闭）',
     default_user_coins: '新用户注册时赠送的初始积分',
-    maintenance_mode: '开启后全站进入维护模式，仅管理员可访问',
+    invite_reward_coins: '每成功邀请一位新用户，邀请人获得的积分（邀请码被使用时发放）',
     patrol_pass_limit: '帖子巡查：累计收到该票数的「没问题」后放行',
     patrol_violation_limit: '帖子巡查：累计收到该票数的「有违规」后打回作者重新编辑',
     report_pass_limit: '举报审核：累计该票数的「没问题」后驳回举报',
@@ -1566,18 +1565,17 @@ function SettingsPanel() {
   // 布尔键：统一渲染为开关（toggle）
   const BOOLEAN_KEYS = new Set([
     'registration_enabled', 'email_verification_required', 'invite_only',
-    'check_in_enabled', 'maintenance_mode', 'ai_review_enabled',
+    'check_in_enabled', 'ai_review_enabled',
   ]);
 
   const groups: { title: string; keys: string[] }[] = [
     { title: '基础信息', keys: ['site_name', 'site_description', 'contact_email'] },
-    { title: '注册与内容', keys: ['registration_enabled', 'email_verification_required', 'invite_only', 'check_in_enabled', 'default_user_coins'] },
+    { title: '注册与内容', keys: ['registration_enabled', 'email_verification_required', 'invite_only', 'check_in_enabled', 'default_user_coins', 'invite_reward_coins'] },
     { title: 'AI 审核（发帖）', keys: ['ai_review_enabled', 'ai_review_timeout_ms', 'ai_review_confidence_threshold', 'ai_review_circuit_break_threshold'] },
     {
       title: '巡查体系',
       keys: ['patrol_pass_limit', 'patrol_violation_limit', 'report_pass_limit', 'report_violation_limit', 'review_reject_coins', 'review_takedown_coins', 'report_reward_coins', 'appeal_review_level', 'soft_delete_retention_days'],
     },
-    { title: '维护', keys: ['maintenance_mode'] },
   ];
   const groupedKeys = new Set(groups.flatMap(g => g.keys));
   // 内部计数/独立专栏/废弃键：不显示在设置页（各自有专门管理入口或无调整意义）

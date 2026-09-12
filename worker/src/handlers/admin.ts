@@ -132,15 +132,22 @@ admin.put('/settings', async (c) => {
   const settings = await c.req.json();
   // 白名单：只允许写入预设的配置键
   // registration_enabled / email_verification_required 由 auth.ts 注册/登录端点消费
+  // invite_reward_coins 邀请奖励额 / check_in_enabled 签到开关（check-in.ts 消费）
+  // 死键已剔除（登记了但没有任何消费端，后台不再渲染、也不允许写入）：
+  //   register_enabled（历史遗留，实际键为 registration_enabled）
+  //   post_audit_enabled（发帖人工审核未实现，AI 审核走 ai_review_enabled）
+  //   maintenance_mode（维护模式未实现）
   // 巡查 v2（068）：patrol_pass_limit 巡查放行票 / patrol_violation_limit 巡查违规票 /
   //   report_pass_limit 举报放行票 / report_violation_limit 举报违规票 /
   //   review_reject_coins 打回扣分 / review_takedown_coins 举报下架扣分 /
-  //   soft_delete_retention_days 软删保留天数（moderation.ts / admin.ts / index.ts 消费）
+  //   report_reward_coins 举报成功奖励 / appeal_review_level 复审等级门槛 /
+  //   soft_delete_retention_days 软删保留天数（moderation.ts / appeals.ts / admin.ts / index.ts 消费）
   const ALLOWED_KEYS = new Set([
-    'site_name', 'site_description', 'register_enabled', 'invite_only',
-    'check_in_enabled', 'post_audit_enabled', 'default_user_coins',
-    'announcement', 'maintenance_mode', 'contact_email',
+    'site_name', 'site_description', 'invite_only',
+    'check_in_enabled', 'default_user_coins',
+    'announcement', 'contact_email',
     'registration_enabled', 'email_verification_required',
+    'invite_reward_coins',
     'patrol_pass_limit', 'patrol_violation_limit',
     'report_pass_limit', 'report_violation_limit',
     'review_reject_coins', 'review_takedown_coins', 'report_reward_coins',
