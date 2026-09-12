@@ -753,7 +753,7 @@ export interface LotteryStatus {
 }
 
 export interface LotteryDrawResult {
-  items: { id: number; name: string; emoji: string; type: string; value: string; rarity: string; coins: number }[];
+  items: { id: number; name: string; emoji: string; type: string; value: string; rarity: string; coins: number; converted_coins?: number }[];
   summary: { total_coins_gain: number; item_count: number; vip_granted: boolean; has_ssr: boolean; has_announce: boolean };
   cost: number;
 }

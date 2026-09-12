@@ -435,7 +435,7 @@ export default function LotteryCoins() {
 
 // ─── 单抽结果弹窗（稀有度定制） ───
 function SingleResult({ item, gain, onClose, onAgain }: {
-  item: { name: string; emoji: string; rarity: string };
+  item: { name: string; emoji: string; rarity: string; converted_coins?: number };
   gain: number;
   onClose: () => void;
   onAgain: () => void;
@@ -470,6 +470,12 @@ function SingleResult({ item, gain, onClose, onAgain }: {
         {gain > 0 && (
           <div className="inline-block bg-green-100 dark:bg-green-900/40 text-green-700 dark:text-green-400 font-bold px-4 py-2 rounded-xl text-lg mb-1">+{gain} 积分</div>
         )}
+        {/* 称号类奖品对 VIP 用户无用，抽中当场折算（后端已按同档积分折算，这里说明来源） */}
+        {!!item?.converted_coins && (
+          <div className="text-xs text-amber-700 dark:text-amber-400 bg-amber-50 dark:bg-amber-900/30 rounded-lg px-3 py-2 mb-1">
+            ♻️ 你已是 VIP，称号无需再抽：本奖品已自动折算为 {item.converted_coins} 积分
+          </div>
+        )}
         <div className="flex gap-2 mt-4">
           <button onClick={onAgain}
             className={`flex-1 py-3 rounded-xl font-bold text-white transition hover:shadow-lg ${isSSR ? 'bg-gradient-to-r from-amber-500 to-orange-500' : 'bg-gradient-to-r from-purple-500 to-pink-500'}`}>
@@ -494,7 +500,15 @@ function TenPullResult({ result, onClose, onAgain }: {
 }) {
   const [revealCount, setRevealCount] = useState(0);
   const [phase, setPhase] = useState<'shine' | 'reveal' | 'done'>('shine');
+  // 已完成「第二次翻牌」（折算成积分）的卡片下标
+  const [revealedConvert, setRevealedConvert] = useState<Record<number, boolean>>({});
   const total = result.items.length;
+
+  // 按品质从高到低排序（SSR → SR → R → N），翻牌顺序先展示高品质，仪式感更强
+  const rarityOrder: Record<string, number> = { SSR: 0, SR: 1, R: 2, N: 3 };
+  const sortedItems = [...result.items].sort((a, b) => (rarityOrder[a.rarity] ?? 9) - (rarityOrder[b.rarity] ?? 9));
+  // 需要折算的卡片（VIP 抽到称号类奖品：后端已折成积分，前端多翻一次展示结果）
+  const convertIdx = sortedItems.map((it, i) => (it.converted_coins ? i : -1)).filter(i => i >= 0);
 
   // 光效阶段定时器（SSR 2s / SR 1.2s / 普通 0.6s）
   useEffect(() => {
@@ -514,22 +528,47 @@ function TenPullResult({ result, onClose, onAgain }: {
     return () => clearInterval(id);
   }, [phase, total]);
 
-  // 全部翻完 → done（展示汇总与按钮）
+  // 第二次翻牌：卡片第一面翻完（600ms 动画）后，再翻一次露出折算后的积分
+  const convertTimers = useRef<Record<number, ReturnType<typeof setTimeout>>>({});
   useEffect(() => {
-    if (phase === 'reveal' && revealCount >= total) setPhase('done');
-  }, [phase, revealCount, total]);
+    if (phase === 'shine') return;
+    for (const i of convertIdx) {
+      if (i >= revealCount) continue;
+      if (revealedConvert[i] || convertTimers.current[i]) continue;
+      convertTimers.current[i] = setTimeout(() => {
+        delete convertTimers.current[i];
+        setRevealedConvert(prev => ({ ...prev, [i]: true }));
+      }, 700);
+    }
+  }, [revealCount, phase]);
+  // 卸载时清掉未触发的第二次翻牌定时器
+  useEffect(() => () => { Object.values(convertTimers.current).forEach(clearTimeout); }, []);
+
+  // 全部翻完（含折算的第二次翻牌）→ done（展示汇总与按钮）
+  const convertPending = convertIdx.filter(i => !revealedConvert[i]).length;
+  useEffect(() => {
+    if (phase === 'reveal' && revealCount >= total && convertPending === 0) setPhase('done');
+  }, [phase, revealCount, total, convertPending]);
 
   // 点击卡片：手动翻开下一张（与自动翻并行，点即加速）
   const flipNext = () => {
     if (phase === 'reveal') setRevealCount(c => Math.min(c + 1, total));
   };
 
-  const totalCoins = result.items.reduce((s, i) => s + (i.coins || 0), 0);
-  const ssrCount = result.items.filter(i => i.rarity === 'SSR').length;
+  // 跳过动画：直接展开全部卡片与折算结果，进入汇总
+  const skipAll = () => {
+    const all: Record<number, boolean> = {};
+    convertIdx.forEach(i => { all[i] = true; });
+    Object.values(convertTimers.current).forEach(clearTimeout);
+    convertTimers.current = {};
+    setRevealedConvert(all);
+    setRevealCount(total);
+  };
 
-  // 按品质从高到低排序（SSR → SR → R → N），翻牌顺序先展示高品质，仪式感更强
-  const rarityOrder: Record<string, number> = { SSR: 0, SR: 1, R: 2, N: 3 };
-  const sortedItems = [...result.items].sort((a, b) => (rarityOrder[a.rarity] ?? 9) - (rarityOrder[b.rarity] ?? 9));
+  const totalCoins = result.items.reduce((s, i) => s + (i.coins || 0) + (i.converted_coins || 0), 0);
+  const ssrCount = result.items.filter(i => i.rarity === 'SSR').length;
+  const convertedList = sortedItems.filter(i => i.converted_coins);
+  const convertedTotal = convertedList.reduce((s, i) => s + (i.converted_coins || 0), 0);
 
   // 稀有度对应卡片边框光效
   const rarityCardStyle = (r: string) => {
@@ -582,27 +621,38 @@ function TenPullResult({ result, onClose, onAgain }: {
       >
         {sortedItems.map((item, i) => {
           const flipped = i < revealCount;
+          const converted = !!revealedConvert[i];
           const border = rarityCardStyle(item.rarity);
           const isGold = item.rarity === 'SSR';
           const isPurple = item.rarity === 'SR';
           return (
             <div key={i} className={`perspective-600 w-14 h-[76px] sm:w-[68px] sm:h-[92px] ${flipped && isGold ? 'animate-[zoomIn_0.45s_ease-out]' : flipped && isPurple ? 'animate-[zoomIn_0.45s_ease-out]' : ''}`}>
               {/* 外层缩放特效（不影响内部 rotateY 翻转）；卡面仅保留光晕（box-shadow 不与 transform 冲突） */}
-              <div className={`relative w-full h-full transition-transform duration-600 ${flipped ? '[transform:rotateY(180deg)]' : ''}`}
+              {/* 折算卡翻两圈：0° 卡背 → 180° 奖品 → 360° 折算结果（正面内容在翻转途中已换成积分） */}
+              <div className={`relative w-full h-full transition-transform duration-600 ${converted ? '[transform:rotateY(360deg)]' : flipped ? '[transform:rotateY(180deg)]' : ''}`}
                 style={{ transformStyle: 'preserve-3d' }}
               >
-                {/* 卡背（未翻）：深色渐变 + 发光描边 + 星标，质感卡背 */}
-                <div className="absolute inset-0 rounded-xl border-2 flex items-center justify-center backface-hidden bg-gradient-to-br from-purple-900 via-indigo-950 to-slate-950 border-purple-500/50 shadow-[inset_0_0_12px_rgba(139,92,246,0.35)]"
-                  style={{ backfaceVisibility: 'hidden' }}
-                >
-                  <div className="flex flex-col items-center gap-1">
-                    <svg className="w-5 h-5 sm:w-6 sm:h-6 text-purple-300/90" viewBox="0 0 24 24" fill="currentColor">
-                      <path d="M12 2l2.4 7.2L22 12l-7.6 2.8L12 22l-2.4-7.2L2 12l7.6-2.8z" />
-                    </svg>
-                    <span className="text-[10px] font-bold tracking-widest text-purple-300/70">★</span>
+                {/* 正面（0°/360°）：未翻时是白色卡背，折算完成后变为积分面 */}
+                {converted ? (
+                  <div className="absolute inset-0 rounded-xl border-2 border-amber-300 flex flex-col items-center justify-center p-0.5 bg-white shadow-[0_0_18px_rgba(251,191,36,0.4)]"
+                    style={{ backfaceVisibility: 'hidden' }}
+                  >
+                    <span className="text-lg sm:text-2xl leading-none">🪙</span>
+                    <span className="text-[7px] sm:text-[9px] font-bold leading-tight text-center mt-0.5 px-0.5 text-amber-600">+{item.converted_coins}积分</span>
                   </div>
-                </div>
-                {/* 卡面（翻后）：SSR/SR 保留光晕强化 */}
+                ) : (
+                  <div className="absolute inset-0 rounded-xl border-2 flex items-center justify-center bg-gradient-to-br from-white to-gray-100 border-gray-200 shadow-[inset_0_0_12px_rgba(0,0,0,0.05)]"
+                    style={{ backfaceVisibility: 'hidden' }}
+                  >
+                    <div className="flex flex-col items-center gap-1">
+                      <svg className="w-5 h-5 sm:w-6 sm:h-6 text-primary-400/70" viewBox="0 0 24 24" fill="currentColor">
+                        <path d="M12 2l2.4 7.2L22 12l-7.6 2.8L12 22l-2.4-7.2L2 12l7.6-2.8z" />
+                      </svg>
+                      <span className="text-[10px] font-bold tracking-widest text-gray-300">★</span>
+                    </div>
+                  </div>
+                )}
+                {/* 背面（180°）：抽到的奖品本体；SSR/SR 保留光晕强化 */}
                 <div className={`absolute inset-0 rounded-xl border-2 flex flex-col items-center justify-center p-0.5
                   [transform:rotateY(180deg)] ${border} bg-white ${flipped && isGold ? 'shadow-[0_0_28px_rgba(251,191,36,0.65)]' : flipped && isPurple ? 'shadow-[0_0_24px_rgba(168,85,247,0.55)]' : ''}`}
                   style={{ backfaceVisibility: 'hidden' }}
@@ -623,6 +673,11 @@ function TenPullResult({ result, onClose, onAgain }: {
         <div className="text-white text-center mb-4 space-y-1.5 animate-fadeInUp" onClick={e => e.stopPropagation()}>
           {ssrCount > 0 && <div className="text-yellow-400 font-bold text-lg">🎉 获得 {ssrCount} 件传说级奖品！</div>}
           {totalCoins > 0 && <div className="text-green-400 font-medium text-sm">+{totalCoins} 积分</div>}
+          {convertedList.length > 0 && (
+            <div className="text-amber-300 text-xs">
+              ♻️ 你已是 VIP，{convertedList.map(i => `「${i.name}」`).join('')} 已自动折算为 {convertedTotal} 积分
+            </div>
+          )}
           {result.summary.item_count > 0 && <div className="text-blue-300 text-sm">获得 {result.summary.item_count} 件道具</div>}
           {result.summary.vip_granted && <div className="text-purple-300 text-sm">🎟️ 获得 VIP 体验券</div>}
         </div>
@@ -642,10 +697,10 @@ function TenPullResult({ result, onClose, onAgain }: {
         </div>
       )}
 
-      {/* 跳过动画 */}
+      {/* 跳过动画：立即展开全部卡片（含折算的第二次翻牌）并进入汇总 */}
       {phase !== 'done' && (
-        <button onClick={() => { setPhase('done'); setRevealCount(result.items.length); }}
-          className="mt-4 text-xs text-gray-500 hover:text-gray-300 transition" onClickCapture={e => e.stopPropagation()}>
+        <button onClick={e => { e.stopPropagation(); skipAll(); }}
+          className="mt-4 px-4 py-1.5 text-xs text-gray-300 border border-gray-600 rounded-full hover:text-white hover:border-gray-400 transition">
           跳过动画 →
         </button>
       )}

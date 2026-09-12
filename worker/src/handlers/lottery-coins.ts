@@ -37,6 +37,11 @@ async function getLotteryConfig(db: D1Database): Promise<typeof DEFAULT_CFG> {
 // 价格限流
 const drawRateLimit = rateLimit({ windowSeconds: 10, maxRequests: 3, keyPrefix: 'lottery_draw' });
 
+// 称号类奖品（称号7天/称号30天）对已生效 VIP / S VIP / S VIP+ 用户毫无用处（本就可自定义头衔），
+// 抽中当场折算成积分；折算额按稀有度对齐奖池里的积分档（SR 70、SSR 350），改数值只动这里
+const TITLE_CONVERT_COINS: Record<string, number> = { SR: 70, SSR: 350 };
+const TITLE_CONVERT_FALLBACK = 70;
+
 // ─── 工具函数 ───
 
 // 按稀有度计算实际概率（考虑保底；cfg 由后台配置）
@@ -219,10 +224,20 @@ async function handleDraw(c: any, user: JWTPayload, count: number, isTenPull: bo
   let totalCoinsGain = 0;
   const itemGrants: { type: string; name: string; value?: string; _meta?: any }[] = [];
   const vipTickets: { tier: string; days: number }[] = [];
+  // results 下标 → 折算积分（称号类奖品对 VIP 用户当场折算，前端据此播放「二次翻牌」动画）
+  const convertedCoins = new Map<number, number>();
   let shouldAnnounce = false;
   let announceName = '';
 
-  for (const prize of results) {
+  // VIP / S VIP / S VIP+ 本就可自由设置自定义头衔，抽到称号卡毫无用处：
+  // 当场折算成积分，不再发放 custom_title 道具（非 VIP 仍照旧发道具）
+  const vipRow = await c.env.DB
+    .prepare("SELECT tier FROM user_vips WHERE user_id = ? AND expires_at > datetime('now')")
+    .bind(user.userId).first();
+  const hasCustomTitlePrivilege = !!vipRow;
+
+  for (let idx = 0; idx < results.length; idx++) {
+    const prize = results[idx];
     switch (prize.type) {
       case 'coins': {
         const val = parseInt(prize.value) || 0;
@@ -254,8 +269,15 @@ async function handleDraw(c: any, user: JWTPayload, count: number, isTenPull: bo
         itemGrants.push({ type: 'item_avatar_frame', name: '头像框', value: prize.value, rarity: prize.rarity });
         break;
       case 'title_badge':
-        // 改为发放自定义称号道具，中奖者可在仓库自定义称号文字
-        itemGrants.push({ type: 'custom_title', name: '自定义称号', value: prize.value, rarity: prize.rarity });
+        if (hasCustomTitlePrivilege) {
+          // 折算额按稀有度取奖池同档积分（SR 70 / SSR 350），保证「SSR 不亏」
+          const conv = TITLE_CONVERT_COINS[prize.rarity] ?? TITLE_CONVERT_FALLBACK;
+          totalCoinsGain += conv;
+          convertedCoins.set(idx, conv);
+        } else {
+          // 非 VIP：发放自定义称号道具，中奖者可在仓库自定义称号文字
+          itemGrants.push({ type: 'custom_title', name: '自定义称号', value: prize.value, rarity: prize.rarity });
+        }
         break;
       case 'rainbow_title':
         itemGrants.push({ type: 'item_rainbow_title', name: '炫彩标题', value: prize.value, rarity: prize.rarity });
@@ -375,7 +397,7 @@ async function handleDraw(c: any, user: JWTPayload, count: number, isTenPull: bo
   }
 
   // 构建返回结果
-  const resultItems = results.map(r => ({
+  const resultItems = results.map((r, idx) => ({
     id: r.id,
     name: r.name,
     emoji: r.emoji,
@@ -383,6 +405,8 @@ async function handleDraw(c: any, user: JWTPayload, count: number, isTenPull: bo
     value: r.value,
     rarity: r.rarity,
     coins: r.type === 'coins' ? parseInt(r.value) || 0 : 0,
+    // >0 表示该奖品已被折算成积分（称号类 + VIP），前端翻牌时会多翻一次展示折算结果
+    converted_coins: convertedCoins.get(idx) || 0,
   }));
 
   return c.json({
