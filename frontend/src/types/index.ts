@@ -214,6 +214,10 @@ export interface LoginResponse {
   token: string;
   refresh_token?: string;
   user: User;
+  // 注册响应附带：验证码是否已在注册时发出（前端跳验证页据此避免重复触发发送）
+  masked_email?: string;
+  code_sent?: boolean;
+  code_silenced?: boolean;
 }
 
 // ===== 装饰与效果（GET /api/items/decoration）=====

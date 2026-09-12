@@ -185,21 +185,17 @@ auth.post('/register', async (c) => {
     user.role = 'admin';
   }
 
-  // 生成邮箱验证码并发送（注册后 email_verified=0，须在资料页验证；失败仅日志，不阻塞注册）
-  const buf = new Uint8Array(6);
-  crypto.getRandomValues(buf);
-  const emailCode = Array.from(buf).map((b) => b % 10).join('');
-  await createVerification(c.env.DB, user.id, 'email_verify', emailCode, 30);
-  const regMail = verificationMailBody(emailCode, 30);
-  const mailRes = await sendMail(c, {
+  // 生成邮箱验证码并发送（注册后 email_verified=0，须在资料页验证；失败仅日志，不阻塞注册）。
+  // 走统一发码入口（带 60 秒静默期）：此后验证页的自动发码请求不会重复发信、也不会作废这封的码
+  const regCode = await sendVerificationCode(c, {
+    userId: user.id,
+    type: 'email_verify',
     to: user.email,
+    minutes: 30,
     subject: '【CloudForum】邮箱验证',
-    text: regMail.text,
-    html: regMail.html,
-    fromName: 'CloudForum',
   });
-  if (!mailRes.ok) {
-    console.error('[register] 验证码邮件发送失败:', mailRes.error);
+  if (regCode.mailError) {
+    console.error('[register] 验证码邮件发送失败:', regCode.mailError);
   }
 
   // 新用户礼包：出生自带 2 张匿名卡（user_lottery_items，可用于匿名发帖）
@@ -221,6 +217,10 @@ auth.post('/register', async (c) => {
       token,
       refresh_token,
       user: { id: user.id, username: user.username, email: user.email, role: user.role, email_verified: 0 },
+      // 注册已发验证码：前端跳验证页时用它显示「验证码已发送至 xxx」，无需再触发一次发送
+      masked_email: maskEmail(user.email),
+      code_sent: regCode.sent,
+      code_silenced: !regCode.sent,
     },
     message: '注册成功',
   });
@@ -398,6 +398,67 @@ function generateSixDigitCode(): string {
   return Array.from(buf).map((b) => b % 10).join('');
 }
 
+// ===== 发码统一入口（带 60 秒静默期）=====
+// 静默期：同一用户 + 同一用途 + 同一目标（data，改邮箱流程存新邮箱）在 60 秒内
+// 已有「未使用且未过期」的验证码时，重复请求不再生成新码、也不再发信，直接视为"已发送"。
+// 解决两个真实问题（2026-09-13 排查）：
+//   ① 前端多点触发（注册成功后跳验证页、该页 on-mount 自动发码）会连发两封；
+//   ② 连点「重新发送」每次都作废旧码，用户手里那封的码必然验证失败（新码才是唯一有效码）。
+// 静默期后（>60 秒）重发仍走原逻辑：作废旧码、发新码。
+const CODE_SILENCE_SECONDS = 60;
+
+async function hasFreshVerificationCode(
+  db: D1Database,
+  userId: number,
+  type: 'email_verify' | 'password_reset',
+  data: string
+): Promise<boolean> {
+  const row = await db
+    .prepare(
+      `SELECT id FROM verifications
+       WHERE user_id = ? AND type = ? AND COALESCE(data, '') = ? AND used = 0
+         AND expires_at > datetime('now')
+         AND created_at > datetime('now', '-${CODE_SILENCE_SECONDS} seconds')
+       ORDER BY id DESC LIMIT 1`
+    )
+    .bind(userId, type, data)
+    .first();
+  return !!row;
+}
+
+/**
+ * 生成并发送验证码（统一入口）。
+ * 返回 sent=false 表示命中静默期：未生成新码、未发信，用户手里的旧码依然有效；
+ * 返回 mailError 时表示已生成新码但邮件发送失败（调用方按原有分支处理）。
+ */
+async function sendVerificationCode(
+  c: { env: Env },
+  opts: {
+    userId: number;
+    type: 'email_verify' | 'password_reset';
+    to: string;
+    minutes: number;
+    data?: string;
+    subject: string;
+  }
+): Promise<{ sent: boolean; code: string; mailError?: string }> {
+  const data = opts.data || '';
+  if (await hasFreshVerificationCode(c.env.DB, opts.userId, opts.type, data)) {
+    return { sent: false, code: '' };
+  }
+  const code = generateSixDigitCode();
+  await createVerification(c.env.DB, opts.userId, opts.type, code, opts.minutes, data);
+  const body = verificationMailBody(code, opts.minutes);
+  const mailRes = await sendMail(c, {
+    to: opts.to,
+    subject: opts.subject,
+    text: body.text,
+    html: body.html,
+    fromName: 'CloudForum',
+  });
+  return { sent: true, code, mailError: mailRes.ok ? undefined : mailRes.error };
+}
+
 // 修改密码（登录态一步直改）：验证当前密码后直接设置新密码，不发验证码。
 // 成功后踢掉全部会话（token_version+1 + 删 refresh_tokens），需重新登录
 auth.put('/password', requireAuth, async (c) => {
@@ -458,18 +519,17 @@ auth.post('/email/request', requireAuth, async (c) => {
     return c.json({ success: false, error: '该邮箱已被使用' }, 409);
   }
 
-  const code = generateSixDigitCode();
-  // 新邮箱暂存 data 列，验证成功后落库
-  await createVerification(c.env.DB, user.userId, 'email_verify', code, 10, normalized);
-
-  const mailRes = await sendMail(c, {
+  // 发码到新邮箱（10 分钟有效；60 秒静默期避免重复发信/作废手里那封）
+  const bindCode = await sendVerificationCode(c, {
+    userId: user.userId,
+    type: 'email_verify',
     to: normalized,
+    minutes: 10,
+    data: normalized,
     subject: '【CloudForum】修改邮箱验证码',
-    text: `你的验证码是：${code}\n10 分钟内有效，请勿泄露给他人。如果不是你本人操作，请忽略本邮件。`,
-    fromName: 'CloudForum',
   });
-  if (!mailRes.ok) {
-    console.error('[email/request] 邮件发送失败:', mailRes.error);
+  if (bindCode.mailError) {
+    console.error('[email/request] 邮件发送失败:', bindCode.mailError);
   }
 
   await c.env.DB
@@ -588,25 +648,22 @@ auth.post('/email/resend-guest', async (c) => {
     return c.json({ success: false, error: '该邮箱已验证，请直接登录' });
   }
 
-  const buf = new Uint8Array(6);
-  crypto.getRandomValues(buf);
-  const code = Array.from(buf).map((b) => b % 10).join('');
-  await createVerification(c.env.DB, row.id, 'email_verify', code, 30);
-  const guestMail = verificationMailBody(code, 30);
-  const mailRes = await sendMail(c, {
+  // 走统一发码入口（60 秒静默期）：验证页自动发码/用户连点重发时不会重复发信、也不作废手里那封的码
+  const guestCode = await sendVerificationCode(c, {
+    userId: row.id,
+    type: 'email_verify',
     to: row.email,
+    minutes: 30,
     subject: '【CloudForum】邮箱验证',
-    text: guestMail.text,
-    html: guestMail.html,
   });
-  if (!mailRes.ok) {
-    console.error('[email/resend-guest] 邮件发送失败:', mailRes.error);
+  if (guestCode.mailError) {
+    console.error('[email/resend-guest] 邮件发送失败:', guestCode.mailError);
     return c.json({ success: false, error: '验证码发送失败，请稍后重试' }, 502);
   }
   return c.json({
     success: true,
     message: '验证码已发送，请查收邮件',
-    data: { masked_email: maskEmail(row.email) },
+    data: { masked_email: maskEmail(row.email), code_silenced: !guestCode.sent },
   });
 });
 
@@ -635,25 +692,23 @@ auth.post('/email/change-guest/request', async (c) => {
     .first<{ id: number }>();
   if (occupied) return c.json({ success: false, error: '该邮箱已被其他账号绑定' }, 409);
 
-  const buf = new Uint8Array(6);
-  crypto.getRandomValues(buf);
-  const code = Array.from(buf).map((b) => b % 10).join('');
-  await createVerification(c.env.DB, userId, 'email_verify', code, 30, normalized);
-  const bindMail = verificationMailBody(code, 30);
-  const mailRes = await sendMail(c, {
+  // 走统一发码入口（60 秒静默期，按 data=新邮箱 分桶：同一新邮箱不重复发信，换新邮箱照常发）
+  const bindCode = await sendVerificationCode(c, {
+    userId,
+    type: 'email_verify',
     to: normalized,
+    minutes: 30,
+    data: normalized,
     subject: '【CloudForum】绑定新邮箱',
-    text: bindMail.text,
-    html: bindMail.html,
   });
-  if (!mailRes.ok) {
-    console.error('[email/change-guest/request] 邮件发送失败:', mailRes.error);
+  if (bindCode.mailError) {
+    console.error('[email/change-guest/request] 邮件发送失败:', bindCode.mailError);
     return c.json({ success: false, error: '验证码发送失败，请稍后重试' }, 502);
   }
   return c.json({
     success: true,
     message: '验证码已发送，请查收邮件',
-    data: { masked_email: maskEmail(normalized) },
+    data: { masked_email: maskEmail(normalized), code_silenced: !bindCode.sent },
   });
 });
 
@@ -717,25 +772,22 @@ auth.post('/email/resend', requireAuth, async (c) => {
     .bind(user.userId)
     .first<{ data: string }>();
 
-  const code = generateSixDigitCode();
-  // data 必须透传：改邮箱流程重发后 verify 仍要能拿到新邮箱
+  // data 必须透传：改邮箱流程重发后 verify 仍要能拿到新邮箱；60 秒静默期内不重复发信
+  const resendData = pending?.data || '';
   const resendMinutes = pending?.data ? 10 : 30;
-  await createVerification(c.env.DB, user.userId, 'email_verify', code, resendMinutes, pending?.data || '');
-
-  const to = pending?.data || fullUser.email;
-  const resendMail = verificationMailBody(code, resendMinutes);
-  const mailRes = await sendMail(c, {
-    to,
+  const resend = await sendVerificationCode(c, {
+    userId: user.userId,
+    type: 'email_verify',
+    to: resendData || fullUser.email,
+    minutes: resendMinutes,
+    data: resendData,
     subject: pending?.data ? '【CloudForum】修改邮箱验证码' : '【CloudForum】邮箱验证',
-    text: resendMail.text,
-    html: resendMail.html,
-    fromName: 'CloudForum',
   });
-  if (!mailRes.ok) {
-    console.error('[email/resend] 邮件发送失败:', mailRes.error);
+  if (resend.mailError) {
+    console.error('[email/resend] 邮件发送失败:', resend.mailError);
   }
 
-  return c.json({ success: true, message: '验证码已发送' });
+  return c.json({ success: true, message: '验证码已发送', data: { code_silenced: !resend.sent } });
 });
 
 // 修改用户名
@@ -1016,24 +1068,20 @@ auth.post('/forgot', async (c) => {
 
   const user = await getUserByEmail(c.env.DB, normalized);
   if (user) {
-    // 6 位数字验证码（crypto 安全随机）
-    const buf = new Uint8Array(6);
-    crypto.getRandomValues(buf);
-    const code = Array.from(buf).map((b) => b % 10).join('');
-
-    await createVerification(c.env.DB, user.id, 'password_reset', code, 10);
-    const mailRes = await sendMail(c, {
+    // 走统一发码入口（10 分钟有效；60 秒静默期内重复请求不重复发信）
+    const reset = await sendVerificationCode(c, {
+      userId: user.id,
+      type: 'password_reset',
       to: user.email,
+      minutes: 10,
       subject: '【CloudForum】重置密码验证码',
-      text: `你的验证码是：${code}\n10 分钟内有效，请勿泄露给他人。如果不是你本人操作，请忽略本邮件。`,
-      fromName: 'CloudForum',
     });
-    if (!mailRes.ok) {
-      console.error('[forgot] 邮件发送失败:', mailRes.error);
+    if (reset.mailError) {
+      console.error('[forgot] 邮件发送失败:', reset.mailError);
     }
     await c.env.DB
       .prepare("INSERT INTO security_logs (user_id, action, detail) VALUES (?, 'forgot_password', ?)")
-      .bind(user.id, mailRes.ok ? '发送重置验证码' : `发送失败: ${mailRes.error}`)
+      .bind(user.id, reset.mailError ? `发送失败: ${reset.mailError}` : (reset.sent ? '发送重置验证码' : '静默期内未重复发送'))
       .run()
       .catch(() => {});
   } else {

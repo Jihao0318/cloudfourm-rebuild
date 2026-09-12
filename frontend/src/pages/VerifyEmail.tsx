@@ -22,6 +22,9 @@ export default function VerifyEmail() {
   // 责令模式参数（Login 跳转时经 state 传入，不进 URL）
   const ordered = (location.state as { change_token?: string; reason?: string } | null);
   const changeMode = !!(ordered?.change_token);
+  // 注册跳转标记：注册接口已经发过验证码，本页不再自动重发（否则同一账号连收两封、首封的码还会被作废）
+  const regState = location.state as { code_sent?: boolean; masked_email?: string } | null;
+  const codeSentByRegister = !changeMode && !!regState?.code_sent;
 
   const [account, setAccount] = useState(searchParams.get('account') || '');
   const [newEmail, setNewEmail] = useState('');
@@ -40,17 +43,26 @@ export default function VerifyEmail() {
     return () => clearTimeout(t);
   }, [resendCd]);
 
-  // 验证模式：打开页面时自动发一次验证码（注册跳转 / 登录被拦跳转都带 account）
+  // 验证模式：打开页面时自动发一次验证码（仅限「登录被拦跳转」等尚未发过码的场景；
+  // 注册跳转（code_sent 标记）里注册接口已经发过一封，这里只展示已发送状态，不再重复触发）
   useEffect(() => {
     if (changeMode) return;
     const acc = (searchParams.get('account') || '').trim();
     if (!acc || autoSentRef.current) return;
     autoSentRef.current = true;
+    if (codeSentByRegister) {
+      if (regState?.masked_email) setMaskedEmail(regState.masked_email);
+      toast('验证码已发送，请查收邮箱', 'success');
+      setResendCd(60);
+      return;
+    }
     setLoading(true);
     auth.resendEmailGuest(acc)
       .then(res => {
         setMaskedEmail(res.data?.masked_email || '');
-        toast(res.message || '验证码已发送，请查收邮箱', 'success');
+        // 后端 60 秒静默期内不会重复发信：明确告知用户查收上一封，避免以为系统没发
+        if (res.data?.code_silenced) toast('验证码已发送过，请查收上一封邮件（约 1 分钟后可重新发送）', 'info');
+        else toast(res.message || '验证码已发送，请查收邮箱', 'success');
         setResendCd(60);
       })
       .catch((err: any) => setError(err.message || '发送失败，请稍后再试'))
@@ -67,7 +79,8 @@ export default function VerifyEmail() {
       try {
         const res = await auth.changeEmailGuestRequest(ordered!.change_token!, newEmail.trim());
         setMaskedEmail(res.data?.masked_email || '');
-        toast(res.message || '验证码已发送，请查收新邮箱', 'success');
+        if (res.data?.code_silenced) toast('验证码已发送过，请查收上一封邮件（约 1 分钟后可重新发送）', 'info');
+        else toast(res.message || '验证码已发送，请查收新邮箱', 'success');
         setResendCd(60);
       } catch (err: any) {
         setError(err.message || '发送失败，请稍后再试');
@@ -80,7 +93,8 @@ export default function VerifyEmail() {
     try {
       const res = await auth.resendEmailGuest(account.trim());
       setMaskedEmail(res.data?.masked_email || '');
-      toast(res.message || '验证码已发送，请查收邮箱', 'success');
+      if (res.data?.code_silenced) toast('验证码已发送过，请查收上一封邮件（约 1 分钟后可重新发送）', 'info');
+      else toast(res.message || '验证码已发送，请查收邮箱', 'success');
       setResendCd(60);
     } catch (err: any) {
       setError(err.message || '发送失败，请稍后再试');

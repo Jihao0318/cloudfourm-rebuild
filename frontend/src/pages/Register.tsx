@@ -155,7 +155,6 @@ export default function Register() {
   const [loading, setLoading] = useState(false);
   const [agreeToTerms, setAgreeToTerms] = useState(false);
   const [showTerms, setShowTerms] = useState(false);
-  const [registered, setRegistered] = useState(false);
   const { register } = useAuth();
   const navigate = useNavigate();
 
@@ -182,8 +181,12 @@ export default function Register() {
     try {
       const result = await register(username, email, password, inviteCode || undefined);
       if (result.success) {
-        // 注册成功（用户信息已入库）→ 直接进入邮箱验证页，验证通过后即可登录
-        navigate(`/verify-email?account=${encodeURIComponent(email.trim())}`);
+        // 注册成功（用户信息已入库）→ 进入邮箱验证页。
+        // 注册接口已经发过验证码，用 state 把「已发送」标记带过去，验证页据此不再自动重发，
+        // 否则同一账号会连收两封验证码邮件、且第一封的码会被后一封作废（2026-09-13 修复）
+        navigate(`/verify-email?account=${encodeURIComponent(email.trim())}`, {
+          state: { code_sent: true, masked_email: result.masked_email },
+        });
         return;
       } else {
         setError(result.error || '注册失败');
@@ -204,23 +207,7 @@ export default function Register() {
           <div className="bg-red-50 text-red-600 px-4 py-2 rounded-lg mb-4 text-sm">{error}</div>
         )}
 
-        {registered ? (
-          <div className="text-center">
-            <div className="w-14 h-14 mx-auto mb-4 rounded-full bg-green-100 flex items-center justify-center">
-              <svg className="w-7 h-7 text-green-600" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12" /></svg>
-            </div>
-            <h2 className="text-lg font-bold mb-2">注册成功 🎉</h2>
-            <p className="text-xs text-gray-500 mb-6">验证码已发送至你的邮箱，完成邮箱验证后即可登录</p>
-            <button onClick={() => navigate(`/verify-email?account=${encodeURIComponent(email.trim())}`)}
-              className="w-full bg-primary-600 text-white py-2.5 rounded-lg font-medium hover:bg-primary-700 transition mb-3">
-              去验证邮箱
-            </button>
-            <button onClick={() => navigate('/')}
-              className="w-full border text-gray-600 py-2.5 rounded-lg font-medium hover:bg-gray-50 transition">
-              暂时跳过，去首页
-            </button>
-          </div>
-        ) : (
+        {/* 注册成功后直接跳邮箱验证页（这里不再有"注册成功"中间屏：原 registered 分支从未被触发，已删除） */}
         <>
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
@@ -303,7 +290,6 @@ export default function Register() {
           已有账号？ <Link to="/login" className="text-primary-600 hover:underline">立即登录</Link>
         </p>
         </>
-        )}
       </div>
 
       {/* 用户协议弹窗 — portal 到 body，避免被困在 main z-10 堆叠上下文（否则遮罩盖不住根级底部导航 z-50） */}

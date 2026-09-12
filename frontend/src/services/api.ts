@@ -197,8 +197,9 @@ export const auth = {
     }),
 
   // 登录前重发验证码：账号（用户名或邮箱）定位，返回脱敏绑定邮箱（帮用户回忆绑的是哪个邮箱）
+  // code_silenced=true 表示后端 60 秒静默期内未重复发信（用户手里的上一封验证码仍然有效）
   resendEmailGuest: (account: string) =>
-    request<{ message?: string; masked_email?: string }>('/auth/email/resend-guest', {
+    request<{ message?: string; masked_email?: string; code_silenced?: boolean }>('/auth/email/resend-guest', {
       method: 'POST',
       body: JSON.stringify({ account }),
     }),
@@ -207,7 +208,7 @@ export const auth = {
 
   // 第一步：向用户输入的新邮箱发码
   changeEmailGuestRequest: (change_token: string, email: string) =>
-    request<{ message?: string; masked_email?: string }>('/auth/email/change-guest/request', {
+    request<{ message?: string; masked_email?: string; code_silenced?: boolean }>('/auth/email/change-guest/request', {
       method: 'POST',
       body: JSON.stringify({ change_token, email }),
     }),

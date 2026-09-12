@@ -11,7 +11,7 @@ interface AuthContextType {
     /** 登录被拦时携带的引导数据：责令换邮箱凭证与原因 */
     data?: { need_email_change?: boolean; change_token?: string; reason?: string };
   }>;
-  register: (username: string, email: string, password: string, invite_code?: string) => Promise<{ success: boolean; error?: string }>;
+  register: (username: string, email: string, password: string, invite_code?: string) => Promise<{ success: boolean; error?: string; masked_email?: string; code_sent?: boolean }>;
   logout: () => Promise<void>;
   refreshUser: () => Promise<void>;
   /** 直接写入会话（责令换邮箱/免登录流程：后端签发登录态后由页面调用） */
@@ -88,7 +88,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         setToken(res.data.token);
         if (res.data.refresh_token) setRefreshToken(res.data.refresh_token);
         setUser(res.data.user);
-        return { success: true };
+        // 带上「注册时已发过验证码」的信息：验证页据此不再自动重发（否则同一账号连收两封、首封作废）
+        return { success: true, masked_email: res.data.masked_email, code_sent: res.data.code_sent };
       }
       // 透传 403 邮箱绑定/验证响应的 data（bind_token、has_email、masked_email），供登录页跳转绑定流程
       return { success: false, error: res.error, data: res.data };
