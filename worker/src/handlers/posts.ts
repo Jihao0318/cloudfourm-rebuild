@@ -12,6 +12,7 @@ import {
   hardDeletePost,
   togglePinPost,
   recordPageView,
+  viewerKeyFor,
   getLike,
   getCategoryBySlug,
   getCategoryById,
@@ -354,7 +355,11 @@ posts.get('/:id', optionalAuth, async (c) => {
   const bookmarked = !!bmResult;
 
   // 浏览记录后台执行，不阻塞响应；举报数需回填 reported 字段，改为同步查询
-  c.executionCtx.waitUntil(recordPageView(c.env.DB, id, user?.userId?.toString() || null).catch(() => {}));
+  // 浏览量：登录用户按账号终身去重，游客按 IP（加盐哈希）终身去重；已看过不再计数
+  c.executionCtx.waitUntil((async () => {
+    const key = await viewerKeyFor(user?.userId, c.req.header('CF-Connecting-IP'), c.env.JWT_SECRET || 'view-salt');
+    await recordPageView(c.env.DB, id, key);
+  })().catch((e) => { console.error('recordPageView failed:', e); }));
   const pendingReport = await c.env.DB
     .prepare("SELECT COUNT(*) as cnt FROM reports WHERE target_id = ? AND target_type = 'post' AND status = 'pending'")
     .bind(id)

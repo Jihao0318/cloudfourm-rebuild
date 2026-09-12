@@ -2,7 +2,7 @@ import { Hono } from 'hono';
 import type { Env } from './types';
 import { setupRoutes } from './routes';
 import { cleanupUser } from './middleware/auth';
-import { cleanupOldPageViews, hardDeletePost } from './db/queries';
+import { hardDeletePost } from './db/queries';
 import { cleanupTransactions } from './handlers/coins';
 import { recalculateLeaderboard } from './handlers/leaderboard';
 import { consumeAiReviewBatch } from './aiReview';
@@ -109,7 +109,7 @@ export default {
   // 5. 已过期的限流计数 → 删除（防 rate_limits 无限膨胀）
   // 6. 已读且超过 30 天的通知 → 删除（未读通知保留）
   // 7. coin_transactions 全表按用户收敛（保留最近 15 条 + 当日记录，原高频写路径 5% 概率触发已移除）
-  // 8. 90 天前的 page_views 清理（原浏览路径 1% 概率触发已移除）
+  // 8.（已移除）page_views 不再清理：它是「谁看过哪篇帖」的去重依据，清掉会导致重复计数
   // 9. 排行榜物化表重算（排名滞后 ≤24h）
   async scheduled(_event: ScheduledEvent, env: Env, ctx: ExecutionContext) {
     ctx.waitUntil((async () => {
@@ -167,12 +167,6 @@ export default {
         console.log('scheduled cleanup: coin transactions converged (per-user keep 15 + today)');
       } catch (e) {
         console.error('scheduled cleanup coin transactions error:', e);
-      }
-      try {
-        await cleanupOldPageViews(env.DB);
-        console.log('scheduled cleanup: purged old page views (>90 days)');
-      } catch (e) {
-        console.error('scheduled purge old page views error:', e);
       }
       try {
         await recalculateLeaderboard(env.DB);

@@ -853,52 +853,42 @@ export async function setSetting(db: D1Database, key: string, value: string): Pr
 // 浏览统计
 // ============================================================
 
-export async function recordPageView(db: D1Database, postId: number, visitorId?: string): Promise<void> {
-  // 每个访客每天只计一次浏览
-  const today = new Date().toISOString().slice(0, 10);
-  const safeVisitorId = visitorId || null;
-  // 匿名访客和已登录用户分别去重。
-  // visitor_id IS ?：传 NULL 时等价于 IS NULL，传字符串时等价于 =。
-  // 用条件插入（INSERT ... SELECT ... WHERE NOT EXISTS）替代「先查后插」，
-  // 查重与插入在同一条语句内原子完成，并发请求不会双计。
-  // 同一 batch 内语句顺序可见：总浏览计数与 view_count 都只在「本次确实插入新浏览记录」时 +1，
-  // 与 COUNT(page_views) 语义一致（物化计数从上线之日起计，存量 page_views 不计入，回填见迁移 073）
+// 访客键：登录用户用账号（终身去重），游客用 IP 的加盐哈希（不存明文 IP）
+export async function viewerKeyFor(userId: number | null | undefined, ip: string | undefined, salt: string): Promise<string> {
+  if (userId != null) return `u:${userId}`;
+  const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(`${ip || 'unknown'}|${salt}`));
+  const hex = Array.from(new Uint8Array(buf)).slice(0, 12).map(b => b.toString(16).padStart(2, '0')).join('');
+  return `ip:${hex}`;
+}
+
+/**
+ * 记录一次浏览：每访客每帖只计一次（真实浏览量 = 有多少人看过）。
+ * - 插入成功（首次观看）才把 posts.view_count 与 settings.total_page_views 各 +1；
+ *   已看过的重复访问直接返回，不写任何计数 —— 刷新/重进不会虚增。
+ * - 并发安全：靠 (post_id, viewer_key) 唯一索引 + ON CONFLICT DO NOTHING，
+ *   同一访客的并发首访只有一条 INSERT 会 changes=1，只计一次。
+ */
+export async function recordPageView(db: D1Database, postId: number, viewerKey: string): Promise<void> {
+  const ins = await db
+    .prepare('INSERT INTO page_views (post_id, viewer_key) VALUES (?, ?) ON CONFLICT(post_id, viewer_key) DO NOTHING')
+    .bind(postId, viewerKey)
+    .run();
+  if (!ins.meta.changes) return; // 该访客已看过这篇帖 → 不重复计数
+
   await db.batch([
+    db.prepare('UPDATE posts SET view_count = view_count + 1 WHERE id = ?').bind(postId),
+    // 全站总浏览计数物化在 settings（key='total_page_views'），管理端统计页直接读该值避免全表 COUNT
     db.prepare(`
-      INSERT INTO page_views (post_id, visitor_id)
-      SELECT ?, ?
-      WHERE NOT EXISTS (SELECT 1 FROM page_views WHERE post_id = ? AND visitor_id IS ? AND viewed_at >= ?)
-    `).bind(postId, safeVisitorId, postId, safeVisitorId, today),
-    // 仅当本次确实插入新浏览记录（同事务内 EXISTS 可见上一语句结果）才 +1 浏览量
-    db.prepare(`
-      UPDATE posts SET view_count = view_count + 1
-      WHERE id = ? AND EXISTS (SELECT 1 FROM page_views WHERE post_id = ? AND visitor_id IS ? AND viewed_at >= ?)
-    `).bind(postId, postId, safeVisitorId, today),
-    // 总浏览计数物化到 settings（key='total_page_views'，value 为 TEXT）：管理端统计页直接读该值，
-    // 避免每次打开统计页对百万行 page_views 做 COUNT(*) 全表扫描。
-    // EXISTS 条件与第二条 view_count 更新完全一致（参数同为 postId/safeVisitorId/today），
-    // 只有去重后确实新增浏览才 +1；首次自动建行（INSERT 分支），已存在则累加（ON CONFLICT 分支）
-    db.prepare(`
-      INSERT INTO settings (key, value, updated_at)
-      SELECT 'total_page_views', CAST(COALESCE((SELECT value FROM settings WHERE key = 'total_page_views'), '0') AS INTEGER) + 1, datetime('now')
-      WHERE EXISTS (SELECT 1 FROM page_views WHERE post_id = ? AND visitor_id IS ? AND viewed_at >= ?)
+      INSERT INTO settings (key, value, updated_at) VALUES ('total_page_views', '1', datetime('now'))
       ON CONFLICT(key) DO UPDATE SET value = CAST(CAST(value AS INTEGER) + 1 AS TEXT), updated_at = datetime('now')
-    `).bind(postId, safeVisitorId, today),
+    `),
   ]);
 }
 
-// 清理 90 天前的旧浏览记录，控制 page_views 表大小。
-// 由 scheduled 每日调用（原 recordPageView 内 1% 概率触发已移除，不再挂在高频浏览路径上偶发全表 DELETE）
-export async function cleanupOldPageViews(db: D1Database): Promise<void> {
-  await db.prepare("DELETE FROM page_views WHERE viewed_at < datetime('now', '-90 days')").run();
-}
-
+// 帖子浏览量：直接读物化值（与明细行数一致；明细每访客一行，不再做时间清理）
 export async function getPostViewCount(db: D1Database, postId: number): Promise<number> {
-  const result = await db
-    .prepare('SELECT COUNT(*) as count FROM page_views WHERE post_id = ?')
-    .bind(postId)
-    .first<{ count: number }>();
-  return result?.count || 0;
+  const row = await db.prepare('SELECT view_count FROM posts WHERE id = ?').bind(postId).first<{ view_count: number }>();
+  return row?.view_count || 0;
 }
 
 // ============================================================
