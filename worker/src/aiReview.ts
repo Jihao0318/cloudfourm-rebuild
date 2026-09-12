@@ -42,18 +42,9 @@ async function numSetting(db: D1Database, key: string, fallback: number, min: nu
   return Number.isFinite(n) && n >= min && n <= max ? n : fallback;
 }
 
-// 审核后端（管理后台可切换，settings ai_review_backend）：workers-ai = Cloudflare 官方 AI、gemini = Gemini。
-// judge Worker 同时提供两个端点：service binding 只认路径、忽略 host，所以换个路径就等于换个后端
-type JudgeBackend = 'workers-ai' | 'gemini';
-
-/** 后端 → judge 端点路径（一个 Worker 两个路由，见审核服务 README） */
-function judgePathFor(backend: JudgeBackend): string {
-  return backend === 'gemini' ? '/gemini' : '/cfai';
-}
-
-// 调用 judge 审核端点：POST <JUDGE_API_URL 的 host>+/cfai 或 /gemini（secrets JUDGE_API_KEY 走 x-judge-key header）
+// 调用 judge 审核端点：POST env.JUDGE_API_URL（secrets JUDGE_API_KEY 走 x-judge-key header）
 // 任何失败（非 2xx / 非 JSON / status==='error' / verdict 非法）一律 throw → 触发队列内置重试
-async function callJudge(post: Pick<ReviewPostRow, 'title' | 'content'>, env: Env, timeoutMs: number, backend: JudgeBackend): Promise<JudgeVerdict> {
+async function callJudge(post: Pick<ReviewPostRow, 'title' | 'content'>, env: Env, timeoutMs: number): Promise<JudgeVerdict> {
   if (!env.JUDGE_API_URL || !env.JUDGE_API_KEY) {
     throw new Error('JUDGE_API_URL/JUDGE_API_KEY 未配置，无法执行 AI 审核');
   }
@@ -61,10 +52,6 @@ async function callJudge(post: Pick<ReviewPostRow, 'title' | 'content'>, env: En
   if (!isSafeFetchUrl(env.JUDGE_API_URL)) {
     throw new Error('JUDGE_API_URL 指向不安全地址（内网/环回/非 http 协议）');
   }
-  // 按后端改写路径（host 沿用 JUDGE_API_URL；走 binding 时 host 会被忽略，只有路径有意义）
-  const judgeUrl = new URL(env.JUDGE_API_URL);
-  judgeUrl.pathname = judgePathFor(backend);
-  const endpoint = judgeUrl.toString();
   const init: RequestInit = {
     method: 'POST',
     headers: { 'content-type': 'application/json', 'x-judge-key': env.JUDGE_API_KEY },
@@ -83,12 +70,12 @@ async function callJudge(post: Pick<ReviewPostRow, 'title' | 'content'>, env: En
   try {
     if (env.JUDGE) {
       try {
-        const bindingRes = await env.JUDGE.fetch(new Request(endpoint, init));
+        const bindingRes = await env.JUDGE.fetch(new Request(env.JUDGE_API_URL, init));
         if (bindingRes.status < 500) {
           res = bindingRes;
         } else {
           console.error('ai_review.judge_binding_5xx，回退公网:', bindingRes.status);
-          res = await fetch(endpoint, init);
+          res = await fetch(env.JUDGE_API_URL, init);
         }
       } catch (bindErr) {
         console.error('ai_review.judge_binding_error，回退公网:', bindErr);
@@ -194,11 +181,6 @@ export async function consumeAiReviewMessage(postId: number, env: Env): Promise<
   const enabled = (await getSetting(db, 'ai_review_enabled')) ?? 'true';
   if (enabled !== 'true') return;
 
-  // 1.5 审核后端（管理后台可切换）：未设置或非法值一律按默认 workers-ai（Cloudflare 官方）。
-  //     在读帖之前选好并记录，便于按日志排查某条消息走了哪条路由
-  const backend: JudgeBackend = (await getSetting(db, 'ai_review_backend')) === 'gemini' ? 'gemini' : 'workers-ai';
-  console.log(`ai_review.backend_selected backend=${backend} path=${judgePathFor(backend)} post=${postId}`);
-
   // 2. 读帖：消费侧重读内容（producer 只投 postId，避免大消息）；已软删 → 跳过
   const post = await db
     .prepare('SELECT id, user_id, title, content, review_status FROM posts WHERE id = ? AND deleted_at IS NULL')
@@ -214,7 +196,7 @@ export async function consumeAiReviewMessage(postId: number, env: Env): Promise<
 
   // 5. 调 judge：任何 throw → 外层 catch 记熔断计数后 re-throw（走队列重试，max_retries=3）
   try {
-    const verdict = await callJudge(post, env, timeoutMs, backend);
+    const verdict = await callJudge(post, env, timeoutMs);
 
     // 6. 置信度三档分流（阈值 settings ai_review_confidence_threshold，0-100 整数，默认 70）：
     //    - 不确定（confidence 缺失或低于阈值，无论 verdict）→ questionable 进「待复核」，人工裁决
