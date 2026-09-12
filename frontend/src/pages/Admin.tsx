@@ -1544,7 +1544,7 @@ function SettingsPanel() {
     contact_email: '展示给用户的联系邮箱',
     registration_enabled: '关闭后新用户无法注册，老用户登录不受影响',
     email_verification_required: '开启后未验证邮箱的账号会被拦在登录前，必须先完成邮箱验证',
-    invite_only: '开启后注册必须填写有效邀请码',
+    invite_only: '开启后注册必须填写有效邀请码；关闭后可不填直接注册，但用户主动填写有效邀请码时邀请人依然获得邀请奖励',
     check_in_enabled: '关闭后每日签到入口与功能停用',
     default_user_coins: '新用户注册时赠送的初始积分',
     maintenance_mode: '开启后全站进入维护模式，仅管理员可访问',

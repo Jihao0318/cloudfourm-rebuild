@@ -1,7 +1,8 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { Link, useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
+import { site } from '../services/api';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import rehypeRaw from 'rehype-raw';
@@ -148,6 +149,8 @@ export default function Register() {
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [inviteCode, setInviteCode] = useState(initialInvite);
+  // 是否强制邀请码（后台「仅邀请注册」开关；默认按强制显示，拉取失败/未加载完也不会误导用户）
+  const [inviteRequired, setInviteRequired] = useState(true);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   const [agreeToTerms, setAgreeToTerms] = useState(false);
@@ -155,6 +158,15 @@ export default function Register() {
   const [registered, setRegistered] = useState(false);
   const { register } = useAuth();
   const navigate = useNavigate();
+
+  // 拉取注册策略：invite_only 关闭时邀请码变「选填」，但仍可主动填写给邀请人记账
+  useEffect(() => {
+    let alive = true;
+    site.publicSettings()
+      .then(r => { if (alive && r.success && r.data) setInviteRequired(!!r.data.invite_only); })
+      .catch(() => { /* 拉取失败保持「必填」文案，由后端判定兜底 */ });
+    return () => { alive = false; };
+  }, []);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -257,10 +269,15 @@ export default function Register() {
           </div>
 
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">邀请码</label>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              邀请码{!inviteRequired && <span className="text-gray-400 font-normal">（选填）</span>}
+            </label>
             <input type="text" value={inviteCode} onChange={e => setInviteCode(e.target.value.toUpperCase())}
               className="w-full px-3 py-2 text-base border border-gray-300 rounded-lg outline-none focus:border-primary-500"
-              placeholder="请输入邀请码（必填）" />
+              placeholder={inviteRequired ? '请输入邀请码（必填）' : '填了邀请人可得积分 · 没有可留空'} />
+            {!inviteRequired && (
+              <p className="text-xs text-gray-400 mt-1">当前未强制邀请码，不填也能注册；填写有效邀请码会奖励邀请人积分</p>
+            )}
           </div>
 
           {/* 用户协议勾选框 */}

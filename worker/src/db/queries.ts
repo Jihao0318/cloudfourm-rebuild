@@ -849,6 +849,14 @@ export async function setSetting(db: D1Database, key: string, value: string): Pr
     .run();
 }
 
+// 后台「仅邀请注册」开关（settings.invite_only）的解析：'1' / 'true' 视为开启。
+// 未设置时按「开启（强制邀请码）」兜底——与改造前的实际行为一致（那时按「有无管理员」判定），
+// 老库漏跑迁移时不会静默把注册放开。注册端点与 /settings/public 共用此判定，避免两处口径分裂。
+export function inviteOnlyOn(value: string | null | undefined): boolean {
+  if (!value) return true;
+  return value === '1' || value === 'true';
+}
+
 // ============================================================
 // 浏览统计
 // ============================================================

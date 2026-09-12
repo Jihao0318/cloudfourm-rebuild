@@ -643,6 +643,8 @@ export const reports = {
 // 公开站点设置
 export const site = {
   announcement: () => request<{ announcement: string; announcement_updated_at: string }>('/settings/public'),
+  // 同一端点 /settings/public 的完整形态（注册页用：invite_only = 注册是否强制邀请码）
+  publicSettings: () => request<{ announcement: string; announcement_updated_at: string; invite_only: boolean }>('/settings/public'),
 };
 
 // Notifications

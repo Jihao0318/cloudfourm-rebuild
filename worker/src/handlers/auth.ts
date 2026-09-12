@@ -17,6 +17,7 @@ import {
   getUserById,
   createVerification,
   verifyCode,
+  inviteOnlyOn,
 } from '../db/queries';
 
 const auth = new Hono<{ Bindings: Env }>();
@@ -71,21 +72,32 @@ auth.post('/register', async (c) => {
   if (existing.emailExists) return c.json({ success: false, error: '该邮箱已被注册' }, 409);
   if (existing.usernameExists) return c.json({ success: false, error: '该用户名已被使用' }, 409);
 
-  // 邀请码校验：已有管理员时注册必须使用邀请码
+  // 邀请码策略（后台「仅邀请注册」开关 settings.invite_only）：
+  //   · 未设置按「开启」兜底（老库一致性，见 inviteOnlyOn）
+  //   · 开关关闭时注册不强制邀请码，但用户主动填写有效邀请码仍然占码 + 给邀请人发奖励
+  //   · 开关开启时才强制；站点还没有管理员（引导首个管理员）时不强制，否则新站点会自锁
   const adminCount = await c.env.DB.prepare("SELECT COUNT(*) as count FROM users WHERE role = 'admin'").first<{ count: number }>();
   const hasAdmin = adminCount && adminCount.count > 0;
+  const inviteCfg = await c.env.DB
+    .prepare("SELECT value FROM settings WHERE key = 'invite_only'")
+    .first<{ value: string }>();
+  const requiresInvite = !!hasAdmin && inviteOnlyOn(inviteCfg?.value);
 
-  if (hasAdmin) {
-    if (!invite_code) {
-      return c.json({ success: false, error: '注册需要邀请码' }, 400);
-    }
-    // 校验邀请码存在且未使用（并发安全由下方原子占码保证，此处仅用于错误提示区分）
+  if (requiresInvite && !invite_code) {
+    return c.json({ success: false, error: '注册需要邀请码' }, 400);
+  }
+
+  // 填了邀请码就一定要有效（方案 A）：不强制时也报错而不是静默忽略，
+  // 避免用户以为「已经给邀请人记上了」；并发占用由下方原子占码兜底
+  let inviteValid = false;
+  if (invite_code) {
     const invite = await c.env.DB
       .prepare('SELECT code FROM invite_codes WHERE code = ? AND used_by IS NULL')
       .bind(invite_code).first();
     if (!invite) {
       return c.json({ success: false, error: '邀请码无效或已使用' }, 400);
     }
+    inviteValid = true;
   }
 
   // 创建用户（先建用户拿到真实 id，原子占码用真实 id——used_by 有 FK 指向 users，不能用 -1 占位）
@@ -114,45 +126,49 @@ auth.post('/register', async (c) => {
     .run()
     .catch(() => {});
 
-  // 原子占码：UPDATE 成功才继续；失败（并发被抢）→ 删除刚创建的用户回滚
-  if (hasAdmin) {
+  // 原子占码：填了有效邀请码就占码 + 发邀请奖励（开关关闭时的「主动填码」同样走这里）。
+  // 占码失败 = 并发被抢：强制模式下回滚刚创建的用户并报错；选填模式下照常注册、只是不发奖
+  if (inviteValid && invite_code) {
     const claim = await c.env.DB
       .prepare("UPDATE invite_codes SET used_by = ?, used_at = datetime('now') WHERE code = ? AND used_by IS NULL")
       .bind(user.id, invite_code).run();
     if (!claim.meta.changes) {
-      // 回滚刚创建的用户：先删 user_balances（FK 无级联），再删用户，避免外键约束报错
-      await c.env.DB.batch([
-        c.env.DB.prepare('DELETE FROM user_balances WHERE user_id = ?').bind(user.id),
-        c.env.DB.prepare('DELETE FROM users WHERE id = ?').bind(user.id),
-      ]);
-      return c.json({ success: false, error: '邀请码已被使用' }, 400);
-    }
-
-    // 邀请奖励：邀请者 +N 积分（settings invite_reward_coins 可配，默认 120——拉新属高质量行为，奖励≈4 天任务量，1 个邀请码上限仍约束刷分）
-    const inviter = await c.env.DB
-      .prepare('SELECT created_by FROM invite_codes WHERE code = ?')
-      .bind(invite_code)
-      .first<{ created_by: number }>();
-    if (inviter && inviter.created_by && inviter.created_by !== user.id) {
-      const cfg = await c.env.DB
-        .prepare("SELECT value FROM settings WHERE key = 'invite_reward_coins'")
-        .first<{ value: string }>();
-      const reward = parseInt(cfg?.value || '120', 10) || 120;
-      // 防刷：邀请者每日 invite_reward 奖励次数上限（todayUtc8 为 UTC+8 业务日口径，与每日任务一致）。
-      // 超限只跳过发奖，注册流程不受影响（避免「生成邀请码→注册马甲→主号拿奖」无限自刷）
-      const todayInviteRewards = await c.env.DB
-        .prepare("SELECT COUNT(*) as c FROM coin_transactions WHERE user_id = ? AND type = 'invite_reward' AND created_at LIKE ?")
-        .bind(inviter.created_by, `${todayUtc8()}%`)
-        .first<{ c: number }>();
-      if ((todayInviteRewards?.c || 0) < DAILY_INVITE_REWARD_LIMIT) {
+      if (requiresInvite) {
+        // 回滚刚创建的用户：先删 user_balances（FK 无级联），再删用户，避免外键约束报错
         await c.env.DB.batch([
-          c.env.DB.prepare('UPDATE user_balances SET coins = coins + ?, total_earned = total_earned + ? WHERE user_id = ?')
-            .bind(reward, reward, inviter.created_by),
-          c.env.DB.prepare("INSERT INTO coin_transactions (user_id, type, amount, balance_after, description) SELECT ?, 'invite_reward', ?, coins, ? FROM user_balances WHERE user_id = ?")
-            .bind(inviter.created_by, reward, `邀请奖励：新用户注册成功`, inviter.created_by),
+          c.env.DB.prepare('DELETE FROM user_balances WHERE user_id = ?').bind(user.id),
+          c.env.DB.prepare('DELETE FROM users WHERE id = ?').bind(user.id),
         ]);
-        // 写入新流水后立即收敛：每用户只保留最近 15 条
-        await cleanupTransactions(c.env.DB, inviter.created_by);
+        return c.json({ success: false, error: '邀请码已被使用' }, 400);
+      }
+      console.error('[register] 邀请码并发占用，选填模式继续注册（不发奖励）:', invite_code);
+    } else {
+      // 邀请奖励：邀请者 +N 积分（settings invite_reward_coins 可配，默认 120——拉新属高质量行为，奖励≈4 天任务量，1 个邀请码上限仍约束刷分）
+      const inviter = await c.env.DB
+        .prepare('SELECT created_by FROM invite_codes WHERE code = ?')
+        .bind(invite_code)
+        .first<{ created_by: number }>();
+      if (inviter && inviter.created_by && inviter.created_by !== user.id) {
+        const cfg = await c.env.DB
+          .prepare("SELECT value FROM settings WHERE key = 'invite_reward_coins'")
+          .first<{ value: string }>();
+        const reward = parseInt(cfg?.value || '120', 10) || 120;
+        // 防刷：邀请者每日 invite_reward 奖励次数上限（todayUtc8 为 UTC+8 业务日口径，与每日任务一致）。
+        // 超限只跳过发奖，注册流程不受影响（避免「生成邀请码→注册马甲→主号拿奖」无限自刷）
+        const todayInviteRewards = await c.env.DB
+          .prepare("SELECT COUNT(*) as c FROM coin_transactions WHERE user_id = ? AND type = 'invite_reward' AND created_at LIKE ?")
+          .bind(inviter.created_by, `${todayUtc8()}%`)
+          .first<{ c: number }>();
+        if ((todayInviteRewards?.c || 0) < DAILY_INVITE_REWARD_LIMIT) {
+          await c.env.DB.batch([
+            c.env.DB.prepare('UPDATE user_balances SET coins = coins + ?, total_earned = total_earned + ? WHERE user_id = ?')
+              .bind(reward, reward, inviter.created_by),
+            c.env.DB.prepare("INSERT INTO coin_transactions (user_id, type, amount, balance_after, description) SELECT ?, 'invite_reward', ?, coins, ? FROM user_balances WHERE user_id = ?")
+              .bind(inviter.created_by, reward, `邀请奖励：新用户注册成功`, inviter.created_by),
+          ]);
+          // 写入新流水后立即收敛：每用户只保留最近 15 条
+          await cleanupTransactions(c.env.DB, inviter.created_by);
+        }
       }
     }
   }

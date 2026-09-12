@@ -3,6 +3,7 @@ import type { Env } from './types';
 import { cors } from './middleware/cors';
 import { requireAuth, optionalAuth } from './middleware/auth';
 import { rateLimit } from './middleware/rateLimit';
+import { inviteOnlyOn } from './db/queries';
 
 import authHandler from './handlers/auth';
 import reviewHandler from './handlers/review';
@@ -52,13 +53,22 @@ export function setupRoutes(app: Hono<{ Bindings: Env }>) {
     return c.json({ success: true, message: 'OK', timestamp: Date.now() });
   });
 
-  // 公共系统设置（公告等）— 无需认证
+  // 公共系统设置（公告 / 注册策略）— 无需认证
   // announcement_updated_at 作为公告版本号：前端用它实现「每次更新公告重新提醒」
+  // invite_only：注册是否强制邀请码（注册页据此显示「必填 / 选填」文案）
   app.get('/api/settings/public', async (c) => {
-    const setting = await c.env.DB
-      .prepare("SELECT value, updated_at FROM settings WHERE key = 'announcement'")
-      .first<{ value: string; updated_at: string }>();
-    return c.json({ success: true, data: { announcement: setting?.value || '', announcement_updated_at: setting?.updated_at || '' } });
+    const rows = await c.env.DB
+      .prepare("SELECT key, value, updated_at FROM settings WHERE key IN ('announcement', 'invite_only')")
+      .all<{ key: string; value: string; updated_at: string }>();
+    const m = new Map((rows.results || []).map((r) => [r.key, r]));
+    return c.json({
+      success: true,
+      data: {
+        announcement: m.get('announcement')?.value || '',
+        announcement_updated_at: m.get('announcement')?.updated_at || '',
+        invite_only: inviteOnlyOn(m.get('invite_only')?.value),
+      },
+    });
   });
 
   // Auth — 无需认证: register/login/forgot/reset
