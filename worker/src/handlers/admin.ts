@@ -148,14 +148,20 @@ admin.put('/settings', async (c) => {
     'soft_delete_retention_days',
     // AI 异步审核（aiReview.ts 消费）：开关（含熔断自动关闭后的人工恢复）、
     // judge 超时（ai_review_timeout_ms）、熔断阈值（ai_review_circuit_break_threshold）、
-    // 置信度分流阈值（ai_review_confidence_threshold，0-100：pass 低于该值进待复核）；
+    // 置信度分流阈值（ai_review_confidence_threshold，0-100：pass 低于该值进待复核）、
+    // 审核后端（ai_review_backend：workers-ai=Cloudflare 官方 / gemini=Gemini，未设置按 workers-ai）；
     // ai_review_fail_count 为内部连续失败计数（任一成功自动清零），不对后台开放
     'ai_review_enabled', 'ai_review_timeout_ms', 'ai_review_circuit_break_threshold',
-    'ai_review_confidence_threshold',
+    'ai_review_confidence_threshold', 'ai_review_backend',
   ]);
   for (const [key, value] of Object.entries(settings)) {
     if (!ALLOWED_KEYS.has(key)) continue;
-    if (typeof value === 'string') await setSetting(c.env.DB, key, value);
+    if (typeof value !== 'string') continue;
+    // 审核后端只接受这两个取值：非法值在消费端会被当成默认后端（静默），这里直接拒绝更易发现
+    if (key === 'ai_review_backend' && value !== 'workers-ai' && value !== 'gemini') {
+      return c.json({ success: false, error: 'ai_review_backend 只能是 workers-ai 或 gemini' }, 400);
+    }
+    await setSetting(c.env.DB, key, value);
   }
   return c.json({ success: true, message: '设置已更新' });
 });
