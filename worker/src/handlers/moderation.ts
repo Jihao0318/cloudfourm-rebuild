@@ -276,7 +276,7 @@ async function rejectPost(db: D1Database, postId: number, authorId: number, reas
 moderation.get('/ai-logs', requireAdmin, async (c) => {
   const rows = await c.env.DB.prepare(`
     SELECT l.id, l.post_id, l.post_title, l.author_id, l.verdict, l.confidence,
-           l.reasons, l.summary, l.action, l.error, l.created_at,
+           l.reasons, l.summary, l.action, l.error, l.backend, l.created_at,
            u.username AS author_name,
            p.review_status AS current_status, p.deleted_at AS post_deleted
     FROM ai_review_logs l
