@@ -11,6 +11,9 @@ const shop = new Hono<{ Bindings: Env }>();
 // 避免与 shop_items 的 id 冲突导致前端 key 重复、买错商品；buy/:id 时按偏移还原回查
 const EXTRA_ID_OFFSET = 10000;
 
+// 单次购买数量上限（前端滑块上限同值，后端兜底校验，防止绕过前端提交超大数量）
+const MAX_BUY_QUANTITY = 10;
+
 // 获取商品列表
 shop.get('/items', async (c) => {
   const [old, extra] = await Promise.all([
@@ -52,19 +55,31 @@ shop.post('/buy/:id', requireAuth, async (c) => {
   // 返回时把 extra 商品的 id 恢复为对外偏移值，前端可据此关联
   if (item.src === 'extra') item.id = item.id + EXTRA_ID_OFFSET;
 
+  // 购买数量：缺省/非法值按 1 件；超过上限直接拒绝（滑块上限由前端给，这里兜底）
+  let quantity = 1;
+  try {
+    const body = await c.req.json();
+    const raw = parseInt(body?.quantity);
+    if (Number.isInteger(raw) && raw > 0) quantity = raw;
+  } catch { /* 无请求体：按 1 件 */ }
+  if (quantity > MAX_BUY_QUANTITY) {
+    return c.json({ success: false, error: `单次最多购买 ${MAX_BUY_QUANTITY} 件` }, 400);
+  }
+  const totalPrice = item.price * quantity;
+
   // 查余额
   const balance = await c.env.DB
     .prepare('SELECT coins FROM user_balances WHERE user_id = ?')
     .bind(user.userId)
     .first<{ coins: number }>();
-  if (!balance || balance.coins < item.price) {
-    return c.json({ success: false, error: `积分不足，需要 ${item.price} 积分` }, 400);
+  if (!balance || balance.coins < totalPrice) {
+    return c.json({ success: false, error: `积分不足，需要 ${totalPrice} 积分` }, 400);
   }
 
-  // 原子扣款 + 发放物品
+  // 原子扣款 + 发放物品（总价 = 单价 × 数量，一次扣款、一次批量发放）
   const deductResult = await c.env.DB
     .prepare('UPDATE user_balances SET coins = coins - ?, total_spent = total_spent + ? WHERE user_id = ? AND coins >= ?')
-    .bind(item.price, item.price, user.userId, item.price)
+    .bind(totalPrice, totalPrice, user.userId, totalPrice)
     .run();
 
   if (!deductResult.meta.changes) {
@@ -73,7 +88,7 @@ shop.post('/buy/:id', requireAuth, async (c) => {
 
   const stmts: any[] = [
     c.env.DB.prepare("INSERT INTO coin_transactions (user_id, type, amount, balance_after, description) SELECT ?, 'shop', ?, coins, ? FROM user_balances WHERE user_id = ?")
-      .bind(user.userId, -item.price, `购买「${item.name}」`, user.userId),
+      .bind(user.userId, -totalPrice, `购买「${item.name}」${quantity > 1 ? ` ×${quantity}` : ''}`, user.userId),
   ];
 
   if (item.src === 'extra') {
@@ -84,24 +99,28 @@ shop.post('/buy/:id', requireAuth, async (c) => {
       const d = JSON.parse(item.data || '{}');
       if (d.duration_days) meta = JSON.stringify({ duration_days: d.duration_days });
     } catch { /* data 非法则按默认时长 */ }
-    stmts.push(
-      c.env.DB.prepare(meta
-        ? 'INSERT INTO user_lottery_items (user_id, item_type, item_name, item_meta) VALUES (?, ?, ?, ?)'
-        : 'INSERT INTO user_lottery_items (user_id, item_type, item_name) VALUES (?, ?, ?)')
-        .bind(...(meta ? [user.userId, item.type, item.name, meta] : [user.userId, item.type, item.name])),
-    );
+    const stmt = c.env.DB.prepare(meta
+      ? 'INSERT INTO user_lottery_items (user_id, item_type, item_name, item_meta) VALUES (?, ?, ?, ?)'
+      : 'INSERT INTO user_lottery_items (user_id, item_type, item_name) VALUES (?, ?, ?)');
+    for (let i = 0; i < quantity; i++) {
+      stmts.push(stmt.bind(...(meta ? [user.userId, item.type, item.name, meta] : [user.userId, item.type, item.name])));
+    }
   } else {
-    stmts.push(
-      c.env.DB.prepare('INSERT INTO user_items (user_id, item_id) VALUES (?, ?)')
-        .bind(user.userId, itemId),
-    );
+    const stmt = c.env.DB.prepare('INSERT INTO user_items (user_id, item_id) VALUES (?, ?)');
+    for (let i = 0; i < quantity; i++) {
+      stmts.push(stmt.bind(user.userId, itemId));
+    }
   }
 
   await c.env.DB.batch(stmts);
   // 写入新流水后立即收敛：每用户只保留最近 15 条
   await cleanupTransactions(c.env.DB, user.userId);
 
-  return c.json({ success: true, data: { item }, message: `成功购买「${item.name}」` });
+  return c.json({
+    success: true,
+    data: { item, quantity, total_price: totalPrice },
+    message: `成功购买「${item.name}」${quantity > 1 ? ` ×${quantity}` : ''}`,
+  });
 });
 
 // 使用改名卡

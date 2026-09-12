@@ -13,6 +13,9 @@ interface ShopItem {
   data: string;
 }
 
+// 单次购买数量上限（与后端 MAX_BUY_QUANTITY 一致）
+const MAX_BUY_QUANTITY = 10;
+
 // 在仓库中使用的道具类型（提示文案用）
 const WAREHOUSE_TYPES = new Set([
   'item_red_packet', 'item_anonymous_card', 'item_pin_top', 'item_post_bg',
@@ -27,8 +30,10 @@ export default function Shop() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [loadError, setLoadError] = useState('');
-  // 正在购买的道具 id（防重入：请求期间禁用按钮）
+  // 正在购买的道具 id（防重入：仅锁住该商品自身的按钮，其它商品照常可买）
   const [buyingId, setBuyingId] = useState<number | null>(null);
+  // 每个商品的购买数量（滑块 1..MAX_BUY_QUANTITY，默认 1 件）
+  const [quantities, setQuantities] = useState<Record<number, number>>({});
   // 查看详情的道具
   const [detailItem, setDetailItem] = useState<ShopItem | null>(null);
   // 底部浮出提示（购买成功，2 秒自动消失）
@@ -62,16 +67,23 @@ export default function Shop() {
     toastTimer.current = setTimeout(() => setBottomToast(''), 2000);
   };
 
+  const quantityOf = (id: number) => quantities[id] || 1;
+  const setQuantity = (id: number, qty: number) => {
+    const clamped = Math.min(MAX_BUY_QUANTITY, Math.max(1, Math.round(qty) || 1));
+    setQuantities(prev => ({ ...prev, [id]: clamped }));
+  };
+
   const buy = async (item: ShopItem) => {
     if (!user) { navigate('/login'); return; }
-    if (buyingId !== null) return; // 防重入：请求期间禁止再次点击
+    if (buyingId === item.id) return; // 防重入：仅同一商品请求期间禁用其按钮
+    const quantity = quantityOf(item.id);
     setError('');
     setBuyingId(item.id);
     try {
-      const res = await shopApi.buy(item.id);
+      const res = await shopApi.buy(item.id, quantity);
       if (res.success) {
         // 底部轻提示，可继续购买（道具可重复购买）
-        showToast(`✅ 购买成功：${item.name}${WAREHOUSE_TYPES.has(item.type) ? '，已放入仓库' : ''}`);
+        showToast(`✅ 购买成功：${item.name}${quantity > 1 ? ` ×${quantity}` : ''}${WAREHOUSE_TYPES.has(item.type) ? '，已放入仓库' : ''}`);
         // 通知 Layout 刷新导航栏余额
         window.dispatchEvent(new Event('coins:changed'));
         // 刷新积分余额（购买后顶部余额实时更新）
@@ -141,6 +153,7 @@ export default function Shop() {
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
         {items.map(item => {
           const data = parseData(item.data);
+          const qty = quantityOf(item.id);
           return (
             <div key={item.id} className="border rounded-2xl p-5 transition-all duration-200 card-hover border-gray-200">
               <div className="flex items-start justify-between mb-3">
@@ -154,11 +167,39 @@ export default function Shop() {
                     </button>
                   )}
                 </div>
-                <div className="bg-amber-50 text-amber-700 font-bold px-3 py-1 rounded-lg text-sm whitespace-nowrap">{item.price} 🪙</div>
+                <div className="bg-amber-50 text-amber-700 font-bold px-3 py-1 rounded-lg text-sm whitespace-nowrap">{item.price} 🪙 /件</div>
               </div>
-              <button onClick={() => buy(item)} disabled={buyingId !== null}
+
+              {/* 购买数量滑块（1..10，默认 1 件） */}
+              <div className="mb-3">
+                <div className="flex items-center justify-between text-xs text-gray-500 mb-1.5">
+                  <span>购买数量</span>
+                  <span className="tabular-nums">
+                    共 <span className="text-amber-700 font-bold">{item.price * qty} 🪙</span>
+                  </span>
+                </div>
+                <div className="flex items-center gap-2.5">
+                  <input
+                    type="range"
+                    min={1}
+                    max={MAX_BUY_QUANTITY}
+                    step={1}
+                    value={qty}
+                    onChange={e => setQuantity(item.id, parseInt(e.target.value))}
+                    aria-label={`${item.name} 购买数量`}
+                    className="flex-1 h-1.5 cursor-pointer appearance-none rounded-full bg-gray-200 accent-primary-500"
+                  />
+                  <span className="w-8 text-center text-sm font-bold tabular-nums text-gray-700">{qty}</span>
+                </div>
+                <div className="flex justify-between text-[10px] text-gray-300 mt-0.5">
+                  <span>1</span>
+                  <span>{MAX_BUY_QUANTITY}（单次上限）</span>
+                </div>
+              </div>
+
+              <button onClick={() => buy(item)} disabled={buyingId === item.id}
                 className="w-full py-2 bg-primary-500 text-white rounded-xl hover:bg-primary-600 transition text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed">
-                {buyingId === item.id ? '购买中...' : '购买'}
+                {buyingId === item.id ? '购买中...' : `购买${qty > 1 ? ` ×${qty}` : ''}`}
               </button>
             </div>
           );

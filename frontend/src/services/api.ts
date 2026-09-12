@@ -698,8 +698,11 @@ export const bookmarks = {
 
 export const shop = {
   items: () => request<any[]>('/shop/items'),
-  buy: (itemId: number) =>
-    request<{ item: any }>(`/shop/buy/${itemId}`, { method: 'POST' }),
+  buy: (itemId: number, quantity: number = 1) =>
+    request<{ item: any; quantity: number; total_price: number }>(`/shop/buy/${itemId}`, {
+      method: 'POST',
+      body: JSON.stringify({ quantity }),
+    }),
   useRename: (new_username: string) =>
     request<any>('/shop/use-rename', {
       method: 'POST',
