@@ -639,10 +639,6 @@ export const reports = {
     }),
 };
 
-export const stats = {
-  recordView: (postId: number) =>
-    request<null>(`/stats/view/${postId}`, { method: 'POST' }),
-};
 
 // 公开站点设置
 export const site = {
