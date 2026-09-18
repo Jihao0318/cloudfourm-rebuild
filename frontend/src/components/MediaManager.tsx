@@ -2,11 +2,13 @@ import { useState, useEffect, useRef } from 'react';
 import { parseMediaTokens, reorderMediaTokens, removeMediaToken, moveToken, type MediaToken } from '../utils/mediaTokens';
 
 /**
- * 媒体管理条：把正文里的图片/视频按出现顺序列成缩略图，支持排序（拖拽 或 ← → 按钮）与删除。
+ * 媒体管理条：把正文里的图片/视频按出现顺序列成缩略图，用 ← → 按钮调整顺序、✕ 删除。
  *
- * - 折叠态只显示一行摘要「媒体（3 图 · 1 视频）」，点击展开（用户选定的形态）
+ * - 折叠态只显示一行摘要「媒体（3 图 · 1 视频）」，点击展开
  * - 操作直接改写正文里的标记顺序/删除该标记，正文仍是唯一数据源
  * - 上传新文件后由父组件递增 expandSignal 自动展开，让用户看到刚传进来的东西
+ * - 不提供拖拽排序（2026-09-18 用户要求彻底禁用）：原生拖拽（长按触发）会卡死页面，
+ *   一律改用按钮，页面上不再有任何 draggable 元素
  */
 interface MediaManagerProps {
   value: string;
@@ -19,11 +21,6 @@ interface MediaManagerProps {
 
 export default function MediaManager({ value, onChange, expandSignal = 0, onInsertToken }: MediaManagerProps) {
   const [expanded, setExpanded] = useState(false);
-  const [dragIndex, setDragIndex] = useState<number | null>(null);
-  const [overIndex, setOverIndex] = useState<number | null>(null);
-  // 仅鼠标允许原生拖拽：触屏上的 HTML5 拖拽（长按触发）在 iOS/Android 上极易把页面拖僵
-  // （用户反馈「长按缩略图整个页面卡住只能刷新」），触屏统一用 ← → 按钮排序
-  const [mouseDragEnabled, setMouseDragEnabled] = useState(false);
   const lastSignal = useRef(expandSignal);
 
   // 上传后自动展开（首次挂载不展开）
@@ -42,16 +39,6 @@ export default function MediaManager({ value, onChange, expandSignal = 0, onInse
 
   const applyOrder = (order: MediaToken[]) => onChange(reorderMediaTokens(value, order));
 
-  const handleDrop = (to: number) => {
-    if (dragIndex === null || dragIndex === to) { setDragIndex(null); setOverIndex(null); return; }
-    const order = [...tokens];
-    const [moved] = order.splice(dragIndex, 1);
-    order.splice(to, 0, moved);
-    setDragIndex(null);
-    setOverIndex(null);
-    applyOrder(order);
-  };
-
   const summary = `媒体（${imageCount} 图${videoCount ? ` · ${videoCount} 视频` : ''}）`;
 
   return (
@@ -69,29 +56,8 @@ export default function MediaManager({ value, onChange, expandSignal = 0, onInse
           <div className="flex gap-2.5 overflow-x-auto pb-2">
             {tokens.map((t, i) => (
               <div key={`${t.kind}-${t.url}-${i}`}
-                draggable={mouseDragEnabled}
-                onPointerDown={e => { if (e.pointerType === 'mouse') setMouseDragEnabled(true); }}
-                onPointerUp={() => setMouseDragEnabled(false)}
-                onPointerCancel={() => setMouseDragEnabled(false)}
-                onDragStart={() => setDragIndex(i)}
-                onDragEnd={() => { setDragIndex(null); setOverIndex(null); setMouseDragEnabled(false); }}
-                onDragOver={e => {
-                  // 只认我们自己发起的排序拖拽：别让浏览器里拖来的文件/文本触发排序
-                  if (dragIndex === null) return;
-                  e.preventDefault();
-                  setOverIndex(i);
-                }}
-                onDragLeave={() => setOverIndex(prev => (prev === i ? null : prev))}
-                onDrop={e => {
-                  if (dragIndex === null) return;
-                  e.preventDefault();
-                  handleDrop(i);
-                }}
                 style={{ WebkitTouchCallout: 'none', userSelect: 'none', touchAction: 'manipulation' }}
-                className={`relative shrink-0 w-[92px] rounded-lg border bg-white transition ${
-                  mouseDragEnabled ? 'cursor-grab' : ''
-                } ${dragIndex === i ? 'opacity-40' : ''
-                } ${overIndex === i && dragIndex !== null && dragIndex !== i ? 'border-primary-500 ring-2 ring-primary-200' : 'border-gray-200'}`}
+                className="relative shrink-0 w-[92px] rounded-lg border border-gray-200 bg-white"
               >
                 <span className="absolute top-1 left-1 z-10 bg-black/55 text-white text-[10px] rounded px-1.5 py-0.5">{i + 1}</span>
                 <div
@@ -127,7 +93,7 @@ export default function MediaManager({ value, onChange, expandSignal = 0, onInse
             ))}
           </div>
           <p className="text-[11px] text-gray-400">
-            用 ← → 按钮调整顺序（电脑上也可以直接拖动缩略图）；✕ 只删除正文里的这一处标记（同一张图被引用多次时互不影响）
+            用 ← → 按钮调整顺序；✕ 只删除正文里的这一处标记（同一张图被引用多次时互不影响）；点缩略图可把该媒体插到光标处
           </p>
         </div>
       )}
