@@ -182,9 +182,14 @@ export async function transcodeFast(file: File, quality: VideoQuality, cb: Compr
   // 解封装回调是同步刷出来的，这里按队列消费并做背压控制
   const aTimescale = aTrack?.timescale || vTimescale;
   let cursor = 0;
+  let stallSince = Date.now();
+  let lastProgress = -1;
   while (true) {
     if (cb.signal?.aborted) throw new Error('已取消');
     if (encoderError) throw encoderError;
+    // 看门狗：解封装/解码长时间没有任何推进（损坏文件、解码器卡住）就放弃，交给兜底路径
+    if (decoded !== lastProgress) { lastProgress = decoded; stallSince = Date.now(); }
+    else if (Date.now() - stallSince > 30_000) throw new Error('转码卡住（30 秒无进展）');
     if (cursor >= sampleQueue.length) {
       // 队列暂时空：等解封装回调继续产出
       if (cursor > 0 && decoded >= totalVideoSamples && totalVideoSamples > 0) break;

@@ -162,6 +162,8 @@ async function compressWithRecorder(file: File, quality: VideoQuality, cb: Compr
     const stream = canvas.captureStream(30);
     try {
       audioCtx = new AudioContext();
+      // 用户手势（选择文件/拖拽）后创建，需 resume 才会真正运行，否则可能录到静音
+      await audioCtx.resume().catch(() => {});
       const src = audioCtx.createMediaElementSource(video);
       const dest = audioCtx.createMediaStreamDestination();
       src.connect(dest);
@@ -185,6 +187,11 @@ async function compressWithRecorder(file: File, quality: VideoQuality, cb: Compr
     recorder.start(1000);
 
     const duration = Number.isFinite(video.duration) && video.duration > 0 ? video.duration : 0;
+    // 看门狗：录制理论上耗时 ≈ 视频时长，若远超（解码卡住/浏览器暂停）就中止，避免界面永远停在「压缩中」
+    const watchdogMs = Math.min(15 * 60_000, Math.max(60_000, (duration || 60) * 1500 + 30_000));
+    let watchdogFired = false;
+    const watchdog = setTimeout(() => { watchdogFired = true; try { recorder?.stop(); } catch { /* 已停止 */ } }, watchdogMs);
+
     let cancelled = false;
     const onAbort = () => { cancelled = true; try { recorder?.stop(); } catch { /* 已停止 */ } };
     cb.signal?.addEventListener('abort', onAbort, { once: true });
@@ -205,6 +212,7 @@ async function compressWithRecorder(file: File, quality: VideoQuality, cb: Compr
     });
 
     cb.signal?.removeEventListener('abort', onAbort);
+    clearTimeout(watchdog);
     try { recorder.stop(); } catch { /* 已停止 */ }
     await finished;
     const type = mime.split(';')[0];
@@ -214,6 +222,8 @@ async function compressWithRecorder(file: File, quality: VideoQuality, cb: Compr
     const out = new File([blob], outName, { type });
     cleanup();
     if (cancelled) return { file, mode: 'blocked', originalSize: file.size, finalSize: file.size, reason: '已取消压缩' };
+    if (watchdogFired) throw new Error('压缩超时（可能是浏览器暂停了后台标签页），请保持本页在前台后重试，或先剪短视频');
+    if (!blob.size) throw new Error('压缩结果为空，请改用 MP4 或贴视频外链');
     return { file: out, mode: 'recorder', originalSize: file.size, finalSize: out.size, elapsedMs: Date.now() - started };
   } catch (err) {
     cleanup();

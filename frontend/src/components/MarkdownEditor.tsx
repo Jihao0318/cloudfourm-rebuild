@@ -1,4 +1,4 @@
-import { useRef, useState, useCallback } from 'react';
+import { useRef, useState, useCallback, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
@@ -113,6 +113,7 @@ interface ToolbarAction {
 
 export default function MarkdownEditor({ value, onChange, placeholder, minHeight = '300px' }: MarkdownEditorProps) {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const rootRef = useRef<HTMLDivElement>(null);   // 编辑器最外层容器（用于判断拖拽落点是否在编辑器内）
   const fileInputRef = useRef<HTMLInputElement>(null);
   const imageBtnRef = useRef<HTMLButtonElement>(null); // 图片菜单锚点（fixed 定位计算坐标用）
 
@@ -226,23 +227,29 @@ export default function MarkdownEditor({ value, onChange, placeholder, minHeight
       setUploadStatus(`已处理 ${done}/${batch.length}`);
     }
 
-    if (results.length > 0) {
-      const cur = valueRef.current;
-      const needLeadingNl = cur.length > 0 && !cur.slice(0, anchor).endsWith('\n');
-      const block = (needLeadingNl ? '\n' : '') + results.join('\n');
-      const caret = insertAt(anchor, block);
-      requestAnimationFrame(() => {
-        const el = textareaRef.current;
-        if (el) { el.focus(); el.setSelectionRange(caret, caret); }
-      });
-      setMediaExpandSignal(n => n + 1);
+    // 收尾统一兜底：插入/提示出错也绝不让异常逃出去（未捕获异常会让调用链上的 UI 状态卡死）
+    try {
+      if (results.length > 0) {
+        const cur = valueRef.current;
+        const needLeadingNl = cur.length > 0 && !cur.slice(0, anchor).endsWith('\n');
+        const block = (needLeadingNl ? '\n' : '') + results.join('\n');
+        const caret = insertAt(anchor, block);
+        requestAnimationFrame(() => {
+          const el = textareaRef.current;
+          if (el) { el.focus(); el.setSelectionRange(caret, caret); }
+        });
+        setMediaExpandSignal(n => n + 1);
+      }
+      if (notes.length) toast(notes.slice(0, 3).join('；') + (notes.length > 3 ? `（共 ${notes.length} 条）` : ''), 'success');
+      if (failures.length) {
+        const msg = failures.slice(0, 3).join('；') + (failures.length > 3 ? `（共 ${failures.length} 个失败）` : '');
+        toast(`有 ${failures.length} 个文件未成功：${msg}`, 'error');
+      }
+    } catch (err) {
+      console.error('[upload] 上传收尾失败:', err);
+    } finally {
+      setUploading(false);
     }
-    if (notes.length) toast(notes.slice(0, 3).join('；') + (notes.length > 3 ? `（共 ${notes.length} 条）` : ''), 'success');
-    if (failures.length) {
-      const msg = failures.slice(0, 3).join('；') + (failures.length > 3 ? `（共 ${failures.length} 个失败）` : '');
-      toast(`有 ${failures.length} 个文件未成功：${msg}`, 'error');
-    }
-    setUploading(false);
   }, [insertAt, toast, videoQuality]);
 
   /** 兼容旧调用点：单文件走同一套流程 */
@@ -286,16 +293,81 @@ export default function MarkdownEditor({ value, onChange, placeholder, minHeight
     handleFiles(files);
   }, [handleFiles]);
 
-  // 拖拽：textare a 上直接拖入多张图片/视频
-  const handleDrop = useCallback((e: React.DragEvent) => {
-    const files = Array.from(e.dataTransfer?.files || []).filter(
-      f => f.type.startsWith('image/') || f.type.startsWith('video/')
-    );
-    if (files.length === 0) return;
-    e.preventDefault();
-    setDragActive(false);
-    handleFiles(files);
-  }, [handleFiles]);
+  /**
+   * 拖拽上传：挂在 document 上统一接管（而不是只挂编辑器容器）。
+   *
+   * 为什么必须这么做（2026-09-18 排查）：
+   *   ① 只在编辑器容器上挂 onDrop 时，把文件拖到 textarea 上 React 不会派发到外层处理器
+   *      （诊断结果：原生事件冒泡到了外层，但外层 onDrop 没被调用）→ 表现为「拖拽没反应」；
+   *   ② 拖到编辑器**以外**的区域（标题框、页面空白）时，浏览器默认行为是直接打开这个文件
+   *      → 整个 SPA 被卸载，看起来像「一拖拽就闪退」；
+   *   ③ 原来用 `dataTransfer.types.includes(...)` 判断，而 Safari 的 types 是 DOMStringList
+   *      （没有 includes）→ dragover 一触发就抛异常，React 卸载整棵树 → 白屏。
+   * 因此这里改为：document 级监听 + 用 Array.from 做安全判断 + 全流程 try/catch 兜底，
+   * 任何异常都只影响本次上传，绝不让页面崩掉。
+   */
+  const handleFilesRef = useRef(handleFiles);
+  handleFilesRef.current = handleFiles;
+
+  useEffect(() => {
+    // Safari 的 types 是 DOMStringList（可迭代但无 includes）；统一转成数组再判断
+    const dragTypes = (dt: DataTransfer | null): string[] => {
+      if (!dt) return [];
+      try { return Array.from(dt.types as unknown as ArrayLike<string>); } catch { return []; }
+    };
+    const looksLikeFileDrag = (dt: DataTransfer | null): boolean => {
+      const types = dragTypes(dt);
+      return types.includes('Files') || types.includes('application/x-moz-file');
+    };
+    const insideEditor = (target: EventTarget | null): boolean => {
+      const el = target as Node | null;
+      return !!(el && rootRef.current && rootRef.current.contains(el));
+    };
+
+    const onDragOver = (e: DragEvent) => {
+      try {
+        if (!looksLikeFileDrag(e.dataTransfer)) return;
+        e.preventDefault();                 // 必须：否则浏览器不允许 drop
+        if (e.dataTransfer) e.dataTransfer.dropEffect = 'copy';
+        setDragActive(true);
+      } catch { /* 拖拽态判断失败不影响页面 */ }
+    };
+    const onDragLeave = (e: DragEvent) => {
+      // 离开窗口时（relatedTarget 为 null）才取消高亮，避免掠过子元素时闪烁
+      if (e.relatedTarget === null) setDragActive(false);
+    };
+    const onDrop = (e: DragEvent) => {
+      try {
+        const isFile = looksLikeFileDrag(e.dataTransfer);
+        if (!isFile) {
+          // 非文件拖拽（例如从别的网页拖来一段文字/图片链接）：
+          // 落在编辑器里保持浏览器默认（当作文本插入），落在编辑器外一律拦掉，避免页面被跳走
+          if (!insideEditor(e.target)) e.preventDefault();
+          return;
+        }
+        // 文件拖拽：无论落在页面哪个位置都拦掉默认行为（否则浏览器会直接打开文件 → 页面闪退）
+        e.preventDefault();
+        setDragActive(false);
+        const files = Array.from(e.dataTransfer?.files || [])
+          .filter(f => f.type.startsWith('image/') || f.type.startsWith('video/'));
+        if (files.length) handleFilesRef.current(files);
+      } catch (err) {
+        console.error('[upload] 拖拽处理失败:', err);
+        setDragActive(false);
+      }
+    };
+
+    document.addEventListener('dragover', onDragOver);
+    document.addEventListener('dragleave', onDragLeave);
+    document.addEventListener('drop', onDrop);
+    return () => {
+      document.removeEventListener('dragover', onDragOver);
+      document.removeEventListener('dragleave', onDragLeave);
+      document.removeEventListener('drop', onDrop);
+    };
+  }, []);
+
+  // 光标插入位置：拖拽上传以「开始处理时的光标」为准（由 handleFiles 内部记录）
 
   const actions: ToolbarAction[] = [
     {
@@ -363,11 +435,7 @@ export default function MarkdownEditor({ value, onChange, placeholder, minHeight
   ];
 
   return (
-    <div className={`border rounded-xl bg-white shadow-sm transition ${dragActive ? 'border-primary-400 ring-2 ring-primary-100' : 'border-gray-200'}`}
-      onDragOver={e => { if (e.dataTransfer?.types?.includes('Files')) { e.preventDefault(); setDragActive(true); } }}
-      onDragLeave={e => { if (e.currentTarget === e.target) setDragActive(false); }}
-      onDrop={handleDrop}
-    >
+    <div ref={rootRef} className={`border rounded-xl bg-white shadow-sm transition ${dragActive ? 'border-primary-400 ring-2 ring-primary-100' : 'border-gray-200'}`}>
       {/* 工具栏：overflow-x-auto 允许 375px 下左组横向滚动；图标按钮 p-1 shrink-0 收紧宽度 */}
       <div className="relative flex items-center justify-between px-2 py-1.5 bg-gray-50/80 border-b border-gray-200 rounded-t-xl overflow-x-auto">
         <div className="flex items-center gap-0.5">
