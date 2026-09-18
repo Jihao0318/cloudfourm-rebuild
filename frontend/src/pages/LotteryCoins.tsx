@@ -680,6 +680,7 @@ function TenPullResult({ result, onClose, onAgain }: {
           )}
           {result.summary.item_count > 0 && <div className="text-blue-300 text-sm">获得 {result.summary.item_count} 件道具</div>}
           {result.summary.vip_granted && <div className="text-purple-300 text-sm">🎟️ 获得 VIP 体验券</div>}
+          {!!result.summary.vip_extended_days && <div className="text-purple-300 text-sm">🎟️ VIP 会员已延长 {result.summary.vip_extended_days} 天</div>}
         </div>
       )}
 

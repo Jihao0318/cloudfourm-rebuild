@@ -198,9 +198,8 @@ auth.post('/register', async (c) => {
     console.error('[register] 验证码邮件发送失败:', regCode.mailError);
   }
 
-  // 新用户礼包：出生自带 2 张匿名卡（user_lottery_items，可用于匿名发帖）
+  // 新用户礼包：出生自带 1 张匿名卡（user_lottery_items，可用于匿名发帖）
   await c.env.DB.batch([
-    c.env.DB.prepare("INSERT INTO user_lottery_items (user_id, item_type, item_name) VALUES (?, 'item_anonymous_card', '匿名卡')").bind(user.id),
     c.env.DB.prepare("INSERT INTO user_lottery_items (user_id, item_type, item_name) VALUES (?, 'item_anonymous_card', '匿名卡')").bind(user.id),
   ]);
 

@@ -38,9 +38,13 @@ async function getLotteryConfig(db: D1Database): Promise<typeof DEFAULT_CFG> {
 const drawRateLimit = rateLimit({ windowSeconds: 10, maxRequests: 3, keyPrefix: 'lottery_draw' });
 
 // 称号类奖品（称号7天/称号30天）对已生效 VIP / S VIP / S VIP+ 用户毫无用处（本就可自定义头衔），
-// 抽中当场折算成积分；折算额按稀有度对齐奖池里的积分档（SR 70、SSR 350），改数值只动这里
-const TITLE_CONVERT_COINS: Record<string, number> = { SR: 70, SSR: 350 };
-const TITLE_CONVERT_FALLBACK = 70;
+// 抽中当场折算成积分；折算额按稀有度对齐奖池里的积分档（SR 120、SSR 350），改数值只动这里
+const TITLE_CONVERT_COINS: Record<string, number> = { SR: 120, SSR: 350 };
+const TITLE_CONVERT_FALLBACK = 120;
+
+// VIP 卡等级序（用于与抽奖人当前档位比较）与低档券的折算额（≈ 该档 VIP 的日价值）
+const TIER_ORDER: Record<string, number> = { vip: 1, 's-vip': 2, 'svip+': 3 };
+const VIP_TICKET_CONVERT: Record<string, number> = { vip: 10, 's-vip': 30 };
 
 // ─── 工具函数 ───
 
@@ -226,15 +230,17 @@ async function handleDraw(c: any, user: JWTPayload, count: number, isTenPull: bo
   const vipTickets: { tier: string; days: number }[] = [];
   // results 下标 → 折算积分（称号类奖品对 VIP 用户当场折算，前端据此播放「二次翻牌」动画）
   const convertedCoins = new Map<number, number>();
+  // 同档 VIP 卡 → 天数叠加（直接延长现有 VIP 到期时间），汇总给前端提示
+  let vipExtendedDays = 0;
   let shouldAnnounce = false;
   let announceName = '';
 
-  // VIP / S VIP / S VIP+ 本就可自由设置自定义头衔，抽到称号卡毫无用处：
-  // 当场折算成积分，不再发放 custom_title 道具（非 VIP 仍照旧发道具）
+  // 当前有效 VIP 档位（决定称号折算与 VIP 卡的处理方式）
   const vipRow = await c.env.DB
     .prepare("SELECT tier FROM user_vips WHERE user_id = ? AND expires_at > datetime('now')")
-    .bind(user.userId).first();
+    .bind(user.userId).first<{ tier: string }>();
   const hasCustomTitlePrivilege = !!vipRow;
+  const currentVipTier = vipRow?.tier || null;
 
   for (let idx = 0; idx < results.length; idx++) {
     const prize = results[idx];
@@ -250,9 +256,23 @@ async function handleDraw(c: any, user: JWTPayload, count: number, isTenPull: bo
         break;
       }
       case 'vip': {
-        const [tier, dur] = (prize.value as string).split(':');
-        const days = parseInt(dur) || 3;
-        vipTickets.push({ tier, days, rarity: prize.rarity });
+        // VIP 卡按与当前等级的关系处理（2026-09-18 用户规则）：
+        //   低档卡  → 当场折算积分（抽到用不上的低档卡不浪费）
+        //   同档卡  → 天数叠加到现有 VIP 到期时间
+        //   高档/无 VIP → 保留为体验券（用户自己在 VIP 页激活，不会被「被升级」）
+        // 券天数至高 3 天（用户规则：奖池里的 VIP 券最长 3 天）
+        const [cardTier, dur] = (prize.value as string).split(':');
+        const days = Math.min(3, parseInt(dur) || 3);
+        const cardRank = TIER_ORDER[cardTier];
+        if (currentVipTier && cardRank !== undefined && cardRank < TIER_ORDER[currentVipTier]) {
+          const conv = VIP_TICKET_CONVERT[cardTier] ?? 10;
+          totalCoinsGain += conv;
+          convertedCoins.set(idx, conv);
+        } else if (currentVipTier && cardRank !== undefined && cardRank === TIER_ORDER[currentVipTier]) {
+          vipExtendedDays += days;
+        } else {
+          vipTickets.push({ tier: cardTier, days, rarity: prize.rarity });
+        }
         break;
       }
       case 'bump':
@@ -365,6 +385,14 @@ async function handleDraw(c: any, user: JWTPayload, count: number, isTenPull: bo
     );
   }
 
+  // 5b. 同档 VIP 卡 → 天数叠加：直接延长现有 VIP 到期时间（从「当前到期」与「现在」中较晚者起算）
+  if (vipExtendedDays > 0) {
+    stmts.push(
+      c.env.DB.prepare("UPDATE user_vips SET expires_at = datetime(MAX(expires_at, datetime('now')), '+' || ? || ' days') WHERE user_id = ?")
+        .bind(vipExtendedDays, user.userId),
+    );
+  }
+
   // 6. 更新保底（使用 SQL 级增量避免并发覆盖）
   if (hasSSR) {
     stmts.push(
@@ -417,6 +445,7 @@ async function handleDraw(c: any, user: JWTPayload, count: number, isTenPull: bo
         total_coins_gain: totalCoinsGain,
         item_count: itemGrants.length,
         vip_granted: vipTickets.length > 0,
+        vip_extended_days: vipExtendedDays, // 同档 VIP 卡 → 天数叠加（前端提示「VIP 已延长 N 天」）
         has_ssr: hasSSR,
         has_announce: shouldAnnounce,
       },

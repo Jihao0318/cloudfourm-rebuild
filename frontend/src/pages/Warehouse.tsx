@@ -61,11 +61,9 @@ const RARITY_COLORS: Record<string, string> = {
   R: 'border-blue-400 bg-blue-50',
 };
 
-function getItemPrice(item: { kind?: string; rarity?: string }): number {
-  if (item.kind === 'vip_ticket') return 30;
-  if (item.rarity === 'SSR' || item.rarity === 'SR') return 25;
-  if (item.rarity === 'R') return 10;
-  return 5;
+// 回收价由后端计算（= 商城参考价 × 30%）并随 my-items 一起返回，前端不再自己估算
+function getItemPrice(item: { recycle_price?: number }): number {
+  return item.recycle_price ?? 5;
 }
 
 // 积分变动后通知 Layout 刷新导航栏余额
@@ -83,6 +81,7 @@ interface MyItem {
   name: string;
   type: string;
   data: string;
+  recycle_price?: number;
 }
 
 export default function Warehouse() {
@@ -261,7 +260,7 @@ export default function Warehouse() {
     setSubmitting(true);
     try {
       const json = await itemsApi.recycleBatch(ids);
-      if (json.success) { toast(`回收成功，获得 ${ids.length * getItemPrice(recycleModal.item)} 积分`, 'success'); notifyCoinsChanged(); setRecycleModal(null); loadItems(); }
+      if (json.success) { toast(json.message || '回收成功', 'success'); notifyCoinsChanged(); setRecycleModal(null); loadItems(); }
       else toast(json.error || '回收失败', 'error');
     } catch (err: any) { toast(err.message || '回收失败', 'error'); }
     setSubmitting(false);

@@ -84,32 +84,34 @@ async function consumeEffectChance(db: D1Database, post: EffectPostRow, kind: Po
   return '操作过于频繁，请稍后重试';
 }
 
-// ─── 回收道具（支持三表 + 按稀有度定价）───
+// ─── 回收道具（支持三表；回收价 = 商城参考价 × 30%，最低 5 分）───
+// 商城参考价：user_items 取购入时的 shop_items.price；抽奖道具按 item_type 对应 shop_extras 价格；
+// VIP 体验券固定 30。旧规则按稀有度给 5/10/25，与商城价差 20~50 倍，是「抽到东西不值钱」的根源。
 items.post('/recycle/:itemId', requireAuth, async (c) => {
   const user: JWTPayload = c.get('user');
   const itemId = parseInt(c.req.param('itemId'));
   if (!itemId) return c.json({ success: false, error: '无效的道具' }, 400);
 
-  // 三表依次查找
+  // 三表依次查找（price = 回收价）
   const item = await c.env.DB.prepare(`
-    SELECT ui.id, 'user_items' as tbl, 'N' as rarity, si.name FROM user_items ui
+    SELECT ui.id, 'user_items' as tbl, si.name,
+           MAX(5, CAST(si.price * 0.3 AS INTEGER)) as price
+    FROM user_items ui
     JOIN shop_items si ON ui.item_id = si.id
     WHERE ui.id = ? AND ui.user_id = ? AND ui.used = 0 LIMIT 1
-  `).bind(itemId, user.userId).first<{ id: number; tbl: string; rarity: string; name: string }>()
+  `).bind(itemId, user.userId).first<{ id: number; tbl: string; name: string; price: number }>()
   || await c.env.DB.prepare(`
-    SELECT id, 'user_vip_tickets' as tbl, 'SR' as rarity,
+    SELECT id, 'user_vip_tickets' as tbl, 30 as price,
            CASE WHEN tier = 's-vip' THEN 'S-VIP体验卡' WHEN tier = 'svip+' THEN 'SVIP+体验卡' ELSE 'VIP体验卡' END || '(' || days || '天)' as name
     FROM user_vip_tickets WHERE id = ? AND user_id = ? AND used = 0 LIMIT 1
-  `).bind(itemId, user.userId).first<{ id: number; tbl: string; rarity: string; name: string }>()
+  `).bind(itemId, user.userId).first<{ id: number; tbl: string; price: number; name: string }>()
   || await c.env.DB.prepare(`
-    SELECT id, 'user_lottery_items' as tbl, COALESCE(json_extract(item_meta, '$.rarity'), 'N') as rarity, item_name as name
-    FROM user_lottery_items WHERE id = ? AND user_id = ? AND used = 0 LIMIT 1
-  `).bind(itemId, user.userId).first<{ id: number; tbl: string; rarity: string; name: string }>();
+    SELECT li.id, 'user_lottery_items' as tbl, li.item_name as name,
+           MAX(5, CAST(COALESCE((SELECT MAX(se.price) FROM shop_extras se WHERE se.type = li.item_type AND se.is_active = 1), 25) * 0.3 AS INTEGER)) as price
+    FROM user_lottery_items li WHERE li.id = ? AND li.user_id = ? AND li.used = 0 LIMIT 1
+  `).bind(itemId, user.userId).first<{ id: number; tbl: string; name: string; price: number }>();
   if (!item) return c.json({ success: false, error: '道具不存在或已使用' }, 400);
-
-  const price = item.tbl === 'user_vip_tickets' ? 30
-    : item.rarity === 'SSR' || item.rarity === 'SR' ? 25
-    : item.rarity === 'R' ? 10 : 5;
+  const price = item.price;
 
   // 根据表名走不同分支，避免 SQL 拼接
   let updateStmt;
@@ -152,24 +154,26 @@ items.post('/recycle-batch', requireAuth, async (c) => {
     return c.json({ success: false, error: '单次最多回收 100 件道具' }, 400);
   }
 
-  // 第一阶段：3 次批量 SELECT，找出每件道具归属的表和稀有度
+  // 第一阶段：3 次批量 SELECT，找出每件道具归属的表和回收价（= 商城参考价 × 30%）
   // D1 单条查询的绑定参数上限为 100：IN (...) 每个 id 占 1 个绑定参数，100 件时再加
   // user_id 共 101 个，必然超限报错。故把 ids 按每块 ≤80 个切块（100 件时切成 80+20 两块），
   // 每块分别执行 3 条 SELECT，结果合并进同一组集合，业务语义与原来完全一致。
   const CHUNK_SIZE = 80;
-  const shopIds = new Set<number>();
+  const shopPrices = new Map<number, number>();
   const vipIds = new Set<number>();
-  const lotteryMap = new Map<number, string>();
+  const lotteryPrices = new Map<number, number>();
   for (let i = 0; i < ids.length; i += CHUNK_SIZE) {
     const chunk = ids.slice(i, i + CHUNK_SIZE);
     // 每块单独生成占位符（块内 id 数 + 1 个 user_id ≤ 81，低于 100 上限）
     const placeholders = chunk.map(() => '?').join(',');
 
-    // 1a. user_items（商城道具，定价 5）
+    // 1a. user_items（商城道具，回收价 = 购入价 × 30%）
     const shopRows = await c.env.DB.prepare(`
-      SELECT id FROM user_items WHERE id IN (${placeholders}) AND user_id = ? AND used = 0
-    `).bind(...chunk, user.userId).all<{ id: number }>();
-    for (const r of shopRows.results || []) shopIds.add(r.id);
+      SELECT ui.id, MAX(5, CAST(si.price * 0.3 AS INTEGER)) as price
+      FROM user_items ui JOIN shop_items si ON ui.item_id = si.id
+      WHERE ui.id IN (${placeholders}) AND ui.user_id = ? AND ui.used = 0
+    `).bind(...chunk, user.userId).all<{ id: number; price: number }>();
+    for (const r of shopRows.results || []) shopPrices.set(r.id, r.price);
 
     // 1b. user_vip_tickets（VIP 体验卡，定价 30）
     const vipRows = await c.env.DB.prepare(`
@@ -177,37 +181,40 @@ items.post('/recycle-batch', requireAuth, async (c) => {
     `).bind(...chunk, user.userId).all<{ id: number }>();
     for (const r of vipRows.results || []) vipIds.add(r.id);
 
-    // 1c. user_lottery_items（抽奖道具，按稀有度定价）
+    // 1c. user_lottery_items（抽奖道具，回收价 = 对应商城价 × 30%）
     const lotteryRows = await c.env.DB.prepare(`
-      SELECT id, COALESCE(json_extract(item_meta, '$.rarity'), 'N') as rarity
-      FROM user_lottery_items WHERE id IN (${placeholders}) AND user_id = ? AND used = 0
-    `).bind(...chunk, user.userId).all<{ id: number; rarity: string }>();
-    for (const r of lotteryRows.results || []) lotteryMap.set(r.id, r.rarity);
+      SELECT li.id, MAX(5, CAST(COALESCE((SELECT MAX(se.price) FROM shop_extras se WHERE se.type = li.item_type AND se.is_active = 1), 25) * 0.3 AS INTEGER)) as price
+      FROM user_lottery_items li WHERE li.id IN (${placeholders}) AND li.user_id = ? AND li.used = 0
+    `).bind(...chunk, user.userId).all<{ id: number; price: number }>();
+    for (const r of lotteryRows.results || []) lotteryPrices.set(r.id, r.price);
   }
 
   // 第二阶段：批量 UPDATE + 发积分（一次 batch）
   const stmts: any[] = [];
   const validIds: number[] = []; // 与 stmts 同序的有效道具 id（供复核循环使用，避免原始 ids 混入无效 id 导致错位）
+  const validPrices = new Map<number, number>(); // id → 回收价（复核阶段按实际生效的重新累计）
   let totalCoins = 0;
   let recycledCount = 0;
   let skipped = 0;
 
+  const priceOf = (id: number): number =>
+    shopPrices.get(id) ?? lotteryPrices.get(id) ?? (vipIds.has(id) ? 30 : 5);
+
   for (const id of ids) {
-    if (shopIds.has(id)) {
+    if (shopPrices.has(id)) {
       stmts.push(c.env.DB.prepare('UPDATE user_items SET used = 1 WHERE id = ? AND user_id = ? AND used = 0').bind(id, user.userId));
-      validIds.push(id);
-      totalCoins += 5;
+      validIds.push(id); validPrices.set(id, shopPrices.get(id)!);
+      totalCoins += shopPrices.get(id)!;
       recycledCount++;
     } else if (vipIds.has(id)) {
       stmts.push(c.env.DB.prepare('UPDATE user_vip_tickets SET used = 1 WHERE id = ? AND user_id = ? AND used = 0').bind(id, user.userId));
-      validIds.push(id);
+      validIds.push(id); validPrices.set(id, 30);
       totalCoins += 30;
       recycledCount++;
-    } else if (lotteryMap.has(id)) {
+    } else if (lotteryPrices.has(id)) {
       stmts.push(c.env.DB.prepare('UPDATE user_lottery_items SET used = 1 WHERE id = ? AND user_id = ? AND used = 0').bind(id, user.userId));
-      validIds.push(id);
-      const r = lotteryMap.get(id)!;
-      totalCoins += r === 'SSR' || r === 'SR' ? 25 : r === 'R' ? 10 : 5;
+      validIds.push(id); validPrices.set(id, lotteryPrices.get(id)!);
+      totalCoins += lotteryPrices.get(id)!;
       recycledCount++;
     } else {
       skipped++;
@@ -235,12 +242,7 @@ items.post('/recycle-batch', requireAuth, async (c) => {
   for (let i = 0; i < validIds.length; i++) {
     const id = validIds[i];
     if (updateResults[i]?.meta?.changes > 0) {
-      if (shopIds.has(id)) actualCoins += 5;
-      else if (vipIds.has(id)) actualCoins += 30;
-      else if (lotteryMap.has(id)) {
-        const r = lotteryMap.get(id)!;
-        actualCoins += r === 'SSR' || r === 'SR' ? 25 : r === 'R' ? 10 : 5;
-      }
+      actualCoins += validPrices.get(id) ?? 5;
       actualCount++;
     }
   }
@@ -267,7 +269,8 @@ items.get('/my-items', requireAuth, async (c) => {
   const [items, tickets, lotteryItems] = await Promise.all([
     c.env.DB.prepare(`
       SELECT ui.id, 'shop_item' as kind, ui.used, ui.applied_to, ui.created_at,
-             si.name, si.type, si.data
+             si.name, si.type, si.data,
+             MAX(5, CAST(si.price * 0.3 AS INTEGER)) as recycle_price
       FROM user_items ui
       JOIN shop_items si ON ui.item_id = si.id
       WHERE ui.user_id = ? AND ui.used = 0
@@ -278,18 +281,20 @@ items.get('/my-items', requireAuth, async (c) => {
              CASE WHEN tier = 's-vip' THEN 'S-VIP体验卡' WHEN tier = 'svip+' THEN 'SVIP+体验卡' ELSE 'VIP体验卡' END || '(' || days || '天)' as name,
              tier || ':' || days as type,
              '{}' as data,
+             30 as recycle_price,
              CASE WHEN tier IN ('s-vip','svip+') THEN 'SSR' ELSE 'SR' END as rarity
       FROM user_vip_tickets
       WHERE user_id = ? AND used = 0
       ORDER BY created_at DESC
     `).bind(user.userId).all(),
     c.env.DB.prepare(`
-      SELECT id, 'lottery_item' as kind, used, applied_to, created_at,
-             item_name as name, item_type as type, item_meta as data,
-             COALESCE(json_extract(item_meta, '$.rarity'), 'N') as rarity
-      FROM user_lottery_items
-      WHERE user_id = ? AND used = 0
-      ORDER BY created_at DESC
+      SELECT li.id, 'lottery_item' as kind, li.used, li.applied_to, li.created_at,
+             li.item_name as name, li.item_type as type, li.item_meta as data,
+             MAX(5, CAST(COALESCE((SELECT MAX(se.price) FROM shop_extras se WHERE se.type = li.item_type AND se.is_active = 1), 25) * 0.3 AS INTEGER)) as recycle_price,
+             COALESCE(json_extract(li.item_meta, '$.rarity'), 'N') as rarity
+      FROM user_lottery_items li
+      WHERE li.user_id = ? AND li.used = 0
+      ORDER BY li.created_at DESC
     `).bind(user.userId).all(),
   ]);
   return c.json({ success: true, data: [...(items.results || []), ...(lotteryItems.results || []), ...(tickets.results || [])] });
@@ -303,7 +308,7 @@ items.get('/my-items', requireAuth, async (c) => {
 const RECOMMEND_HOURS = 12;
 const RECOMMEND_MAX_HOURS = 72;
 const RECOMMEND_SLOTS = 5; // 推荐位槽位数
-const RECOMMEND_PRICE = 100; // 推荐卡价格（与 shop_extras 一致，用于剩余价值折算）
+const RECOMMEND_PRICE = 80; // 推荐卡价格（与 shop_extras 一致，用于剩余价值折算；084 迁移同步改价 100 → 80）
 
 items.post('/use/bump/:postId', requireAuth, async (c) => {
   const user: JWTPayload = c.get('user');
