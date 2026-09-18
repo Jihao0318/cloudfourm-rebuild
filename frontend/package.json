@@ -13,6 +13,8 @@
     "@fortawesome/free-regular-svg-icons": "^6.7.2",
     "@fortawesome/free-solid-svg-icons": "^6.7.2",
     "@fortawesome/react-fontawesome": "^3.3.1",
+    "mp4-muxer": "^5.2.2",
+    "mp4box": "^2.4.1",
     "react": "^18.3.0",
     "react-dom": "^18.3.0",
     "react-easy-crop": "^6.0.2",
