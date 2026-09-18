@@ -12,7 +12,7 @@ import type { PatrolStats } from '../types';
 import { formatDateTime } from '../utils/date';
 import EmptyState from '../components/EmptyState';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
-import { faFlag, faNewspaper, faEye, faRobot } from '@fortawesome/free-solid-svg-icons';
+import { faFlag, faNewspaper, faEye, faRobot, faTriangleExclamation, faClipboardCheck, faGavel } from '@fortawesome/free-solid-svg-icons';
 import BackButton from '../components/BackButton';
 
 // 巡查预览的 markdown 渲染配置（与 PostDetail 一致：GFM/换行/富媒体/iframe 白名单）
@@ -78,9 +78,11 @@ function OverviewTab({ go, stats, isAdmin }: { go: (t: Tab) => void; stats: Patr
   }, []);
 
   const forMe = isAdmin ? '' : '（待我处理）';
+  // 概览卡用「待办」类图标（警示 / 待检查清单），与下方功能标签的「旗 / 报纸」区分开，
+  // 避免「待审举报」和「举报审核」用同一个旗子让人分不清（用户反馈）
   const cards = [
-    { icon: faFlag, label: `待审举报${forMe}`, value: pendingCount, color: 'text-red-600', bg: 'bg-red-50', tab: 'reports' as Tab, emphasize: true },
-    { icon: faNewspaper, label: `待巡查帖子${forMe}`, value: postTotal, color: 'text-primary-600', bg: 'bg-primary-50', tab: 'posts' as Tab },
+    { icon: faTriangleExclamation, label: `待审举报${forMe}`, value: pendingCount, color: 'text-red-600', bg: 'bg-red-50', tab: 'reports' as Tab, emphasize: true },
+    { icon: faClipboardCheck, label: `待巡查帖子${forMe}`, value: postTotal, color: 'text-primary-600', bg: 'bg-primary-50', tab: 'posts' as Tab },
   ];
 
   // 巡查等级进度：expNeededForLevel 为 null 或 ≤ 本级经验时视为封顶（进度条满格）
@@ -605,7 +607,7 @@ function AppealsReview() {
       {loading ? (
         <div className="text-center py-12 text-sm text-gray-400">加载中...</div>
       ) : !current ? (
-        <EmptyState icon={faFlag} title="暂无待复审申诉" description="作者对已下架帖子的申诉会显示在这里" />
+        <EmptyState icon={faGavel} title="暂无待复审申诉" description="作者对已下架帖子的申诉会显示在这里" />
       ) : (
         <>
           {/* 申诉预览卡（模拟正常帖子浏览样式，匿名编号） */}
@@ -764,7 +766,7 @@ export default function Moderator() {
   // 已下架复审分区：达标巡查员 / 管理员可见可用
   const canAppealReview = appealAccess?.allowed || user.role === 'admin';
   if (canAppealReview) {
-    tabs.push({ id: 'appeals', label: '已下架复审', icon: faFlag });
+    tabs.push({ id: 'appeals', label: '已下架复审', icon: faGavel });
   }
 
   return (

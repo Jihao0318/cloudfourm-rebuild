@@ -26,6 +26,22 @@ const TYPE_META: Record<string, { icon: string; cls: string }> = {
   system:       { icon: '🔔', cls: 'bg-amber-50 dark:bg-amber-900/30' },
 };
 
+/**
+ * 取通知的图标与底色。
+ * `system` 是个大杂烩（AI 待复核、公告、积分变动等都会走它），线上系统通知绝大多数是 AI 待复核一类，
+ * 全用同一个铃铛会分不清；这里再用正文开头的图标（后端 aiReview 写入时自带的 🤔/🚫/✏️）细分一下。
+ * 未知类型回落到 system（铃铛），不会出现没有图标的情况。
+ */
+function notificationMeta(n: { type: string; content?: string | null }): { icon: string; cls: string } {
+  if (n.type === 'system' && n.content) {
+    const head = n.content.slice(0, 2);
+    if (head.startsWith('🤔')) return { icon: '❓', cls: 'bg-amber-50 dark:bg-amber-900/30' }; // AI 审核待人工复核
+    if (head.startsWith('🚫')) return TYPE_META.post_takedown; // AI 判定违规下架
+    if (head.startsWith('✏️')) return TYPE_META.post_rejected; // 巡查打回
+  }
+  return TYPE_META[n.type] || TYPE_META.system;
+}
+
 export default function NotificationBell({ userId }: NotificationBellProps) {
   const navigate = useNavigate();
   const [open, setOpen] = useState(false);
@@ -249,7 +265,7 @@ export default function NotificationBell({ userId }: NotificationBellProps) {
                     {/* 分组标题 */}
                     <div className="px-4 pt-3 pb-1.5 text-[11px] font-semibold text-gray-400 dark:text-gray-500">{g.label}</div>
                     {g.items.map(n => {
-                      const meta = TYPE_META[n.type] || TYPE_META.system;
+                      const meta = notificationMeta(n);
                       const sub = renderSub(n);
                       const expanded = expandedId === n.id;
                       return (

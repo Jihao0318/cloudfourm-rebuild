@@ -810,7 +810,7 @@ const MENU: { section: string; items: { id: AdminMenuId; label: string; icon: st
       { id: 'announcement', label: '公告管理', icon: '📢' },
       { id: 'settings', label: '系统设置', icon: '⚙️' },
       { id: 'invites', label: '邀请码', icon: '🎫' },
-      { id: 'sec_logs', label: '安全日志', icon: '🛡️' },
+      { id: 'sec_logs', label: '安全日志', icon: '📜' },
     ],
   },
 ];
