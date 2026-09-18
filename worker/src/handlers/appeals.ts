@@ -90,6 +90,10 @@ appeals.get('/pending', async (c) => {
   const page = Math.max(1, parseInt(c.req.query('page') || '1'));
   const pageSize = Math.min(50, Math.max(1, parseInt(c.req.query('pageSize') || '10')));
   const offset = (page - 1) * pageSize;
+  // 自查自决拦截（管理员豁免）：自己帖子的申诉不进本人队列——与帖子巡查/举报审核一致
+  const isAdmin = dbUser.role === 'admin';
+  const selfClause = isAdmin ? '' : ' AND p.user_id != ?';
+  const selfParams = isAdmin ? [] : [dbUser.id];
 
   const rows = await c.env.DB.prepare(`
     SELECT a.id AS appeal_id, a.post_id, a.reason AS appeal_reason, a.created_at AS appeal_created_at,
@@ -101,13 +105,14 @@ appeals.get('/pending', async (c) => {
     JOIN posts p ON p.id = a.post_id
     LEFT JOIN categories c ON p.category_id = c.id
     LEFT JOIN users u ON p.user_id = u.id
-    WHERE a.status = 'pending'
+    WHERE a.status = 'pending'${selfClause}
     ORDER BY a.created_at ASC
     LIMIT ? OFFSET ?
-  `).bind(pageSize, offset).all<any>();
+  `).bind(...selfParams, pageSize, offset).all<any>();
 
   const totalRow = await c.env.DB
-    .prepare("SELECT COUNT(*) AS cnt FROM appeals WHERE status = 'pending'")
+    .prepare(`SELECT COUNT(*) AS cnt FROM appeals a JOIN posts p ON p.id = a.post_id WHERE a.status = 'pending'${selfClause}`)
+    .bind(...selfParams)
     .first<{ cnt: number }>();
 
   return c.json({

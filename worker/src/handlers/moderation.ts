@@ -38,9 +38,12 @@ async function rejectCoins(db: D1Database): Promise<number> {
   return Number.isFinite(n) && n >= 0 && n <= 1000 ? n : 50;
 }
 
-// 隐藏规则：巡查员投过任何票的内容不再显示给自己（避免重复劳动）
-// 管理员豁免——始终可见全部内容（含自己投过的、自己的帖子），便于管理/调试
+// 隐藏规则（管理员豁免，始终可见全部内容，便于管理/调试）：
+//   ① 巡查员投过任何票的内容不再显示给自己（避免重复劳动）
+//   ② 自己发布的帖子不进本人队列（不能巡查自己的帖子）
+//   ③ 自己举报过的帖子不进本人队列（自己举报的由别人复核，避免既当举报人又当裁判）
 function queueVisibility(userId: number, isAdmin: boolean, queue: string): { where: string; params: any[] } {
+  const notMine = "p.user_id != ? AND NOT EXISTS (SELECT 1 FROM reports rp WHERE rp.target_type = 'post' AND rp.target_id = p.id AND rp.reporter_id = ?)";
   if (isAdmin) {
     return queue === 'flagged'
       ? { where: "p.review_status IN ('questionable','violation')", params: [] }
@@ -48,12 +51,12 @@ function queueVisibility(userId: number, isAdmin: boolean, queue: string): { whe
   }
   return queue === 'flagged'
     ? {
-        where: "p.review_status IN ('questionable','violation') AND p.user_id != ? AND NOT EXISTS (SELECT 1 FROM post_review_actions pra WHERE pra.post_id = p.id AND pra.reviewer_id = ? AND pra.round = p.review_round)",
-        params: [userId, userId],
+        where: `p.review_status IN ('questionable','violation') AND ${notMine} AND NOT EXISTS (SELECT 1 FROM post_review_actions pra WHERE pra.post_id = p.id AND pra.reviewer_id = ? AND pra.round = p.review_round)`,
+        params: [userId, userId, userId],
       }
     : {
-        where: "p.review_status = ? AND p.user_id != ? AND NOT EXISTS (SELECT 1 FROM post_review_actions pra WHERE pra.post_id = p.id AND pra.reviewer_id = ? AND pra.round = p.review_round)",
-        params: ['pending', userId, userId],
+        where: `p.review_status = ? AND ${notMine} AND NOT EXISTS (SELECT 1 FROM post_review_actions pra WHERE pra.post_id = p.id AND pra.reviewer_id = ? AND pra.round = p.review_round)`,
+        params: ['pending', userId, userId, userId],
       };
 }
 
@@ -138,6 +141,21 @@ moderation.post('/review-post', requireAdmin, async (c) => {
   const dbUser: { role: string } | undefined = c.get('dbUser');
   const isAdmin = dbUser?.role === 'admin';
   const round = post.review_round || 0;
+
+  // 回避规则（管理员豁免）：不能巡查自己的帖子，也不能巡查自己举报过的帖子
+  // （队列已经过滤，这里再兜一道，防止直接调接口绕开）
+  if (!isAdmin) {
+    if (post.user_id === user.userId) {
+      return c.json({ success: false, error: '不能巡查自己的帖子' }, 403);
+    }
+    const myReport = await db
+      .prepare("SELECT 1 FROM reports WHERE reporter_id = ? AND target_type = 'post' AND target_id = ? LIMIT 1")
+      .bind(user.userId, postId)
+      .first();
+    if (myReport) {
+      return c.json({ success: false, error: '不能巡查自己举报过的帖子' }, 403);
+    }
+  }
 
   // 状态机约束：pending 可投 pass/question/violation；questionable/violation 可投 pass/confirm；rejected/cleared 不可再操作
   if (post.review_status === 'rejected' || post.review_status === 'cleared') {

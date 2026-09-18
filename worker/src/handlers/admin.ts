@@ -885,11 +885,16 @@ admin.get('/reports', async (c) => {
     const pageSize = 20;
     const offset = (page - 1) * pageSize;
 
-    // 隐藏规则：已投过票的巡查员不再看到该目标（管理员豁免，始终可见全部）
+    // 隐藏规则（管理员豁免，始终可见全部）：
+    //   ① 已投过票的目标不再显示给该巡查员
+    //   ② 自己举报的内容不进本人队列（不能既当举报人又当复核人）
+    //   ③ 自己发布的内容不进本人队列（不能复核自己的帖子/评论）
     const visibilityClause = isAdmin
       ? ''
-      : " AND NOT EXISTS (SELECT 1 FROM report_review_actions rra WHERE rra.target_type = r.target_type AND rra.target_id = r.target_id AND rra.reviewer_id = ?)";
-    const bindMyId = isAdmin ? [] : [myId];
+      : ` AND NOT EXISTS (SELECT 1 FROM report_review_actions rra WHERE rra.target_type = r.target_type AND rra.target_id = r.target_id AND rra.reviewer_id = ?)
+          AND r.reporter_id != ?
+          AND COALESCE(CASE WHEN r.target_type = 'post' THEN p.user_id ELSE c.user_id END, 0) != ?`;
+    const bindMyId = isAdmin ? [] : [myId, myId, myId];
 
     // 计数与分页都以「被举报内容」为单位：同一内容可能被多人举报（多条记录），界面上合并为一张卡片。
     // 早期按记录行计数会出现「卡片说 N 条、实际只有 M 张卡」和「翻页翻到同一内容的重复记录」两种错位
@@ -897,6 +902,8 @@ admin.get('/reports', async (c) => {
       .prepare(`
         SELECT COUNT(*) as cnt FROM (
           SELECT 1 FROM reports r
+          LEFT JOIN posts p ON p.id = CASE WHEN r.target_type = 'post' THEN r.target_id ELSE r.post_id END
+          LEFT JOIN comments c ON r.target_type = 'comment' AND r.target_id = c.id
           WHERE r.status = 'pending' AND r.target_id IS NOT NULL${visibilityClause}
           GROUP BY r.target_type, r.target_id
         )
@@ -1003,18 +1010,36 @@ admin.post('/reports/:id/review', async (c) => {
     if (!['confirm', 'pass'].includes(action)) return c.json({ success: false, error: '参数无效' }, 400);
 
     const report = await c.env.DB
-      .prepare('SELECT target_type, target_id, reporter_id FROM reports WHERE id = ?')
+      .prepare(`
+        SELECT r.target_type, r.target_id, r.reporter_id,
+               CASE WHEN r.target_type = 'post' THEN p.user_id ELSE c.user_id END AS target_author_id
+        FROM reports r
+        LEFT JOIN posts p ON r.target_type = 'post' AND p.id = r.target_id
+        LEFT JOIN comments c ON r.target_type = 'comment' AND c.id = r.target_id
+        WHERE r.id = ?
+      `)
       .bind(reportId)
-      .first<{ target_type: string; target_id: number; reporter_id: number }>();
+      .first<{ target_type: string; target_id: number; reporter_id: number; target_author_id: number | null }>();
     if (!report) return c.json({ success: false, error: '举报不存在' }, 404);
+
+    const dbUser: User | undefined = c.get('dbUser');
+    const isAdmin = dbUser?.role === 'admin';
+
+    // 回避规则（管理员豁免）：不能复核自己举报的内容，也不能复核自己发布的内容。
+    // 队列已过滤，这里再兜一道，防止直接调接口绕开（且必须在写入投票前拦截）
+    if (!isAdmin) {
+      if (report.reporter_id === user.userId) {
+        return c.json({ success: false, error: '不能复核自己举报的内容' }, 403);
+      }
+      if (report.target_author_id === user.userId) {
+        return c.json({ success: false, error: '不能复核自己发布的内容' }, 403);
+      }
+    }
 
     // 投票幂等覆盖（UNIQUE(target_type, target_id, reviewer_id)）
     await c.env.DB.prepare(`INSERT INTO report_review_actions (target_type, target_id, reviewer_id, action) VALUES (?, ?, ?, ?)
       ON CONFLICT(target_type, target_id, reviewer_id) DO UPDATE SET action = excluded.action, created_at = datetime('now')`)
       .bind(report.target_type, report.target_id, user.userId, action).run();
-
-    const dbUser: User | undefined = c.get('dbUser');
-    const isAdmin = dbUser?.role === 'admin';
 
     // 幂等抢占：真正执行下架/驳回前先把举报置为 resolved（仅 pending 可抢占），
     // 防两名巡查员并发达阈值导致双扣分/双奖励/双通知；抢不到说明已被并发处理
