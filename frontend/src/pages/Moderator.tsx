@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
@@ -59,30 +59,59 @@ type Tab = 'overview' | 'reports' | 'posts' | 'appeals' | 'ailogs';
 
 // ===== 概览 =====
 function OverviewTab({ go, stats, isAdmin }: { go: (t: Tab) => void; stats: PatrolStats | null; isAdmin: boolean }) {
-  const [pendingCount, setPendingCount] = useState<number | null>(null);
-  const [postTotal, setPostTotal] = useState<number | null>(null);
+  const [pendingCount, setPendingCount] = useState<number | null>(null); // 待审举报（被举报内容数）
+  const [pendPosts, setPendPosts] = useState<number | null>(null); // 待巡查帖子
+  const [flagPosts, setFlagPosts] = useState<number | null>(null); // 待复核帖子
   // 拉取失败时保持“—”（不显示错误的 0），并提示可进入栏目查看
   const [loadFailed, setLoadFailed] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
+  const [refreshedAt, setRefreshedAt] = useState<string>('');
 
-  useEffect(() => {
-    let alive = true;
+  const load = useCallback(async () => {
+    setRefreshing(true);
+    // 三个接口都拿：帖子巡查标签页是把「待巡查 pending + 待复核 flagged」两个队列合并展示的，
+    // 卡片只算 pending 就会比标签页里实际能看到的少（用户反馈「数字对不上」）
+    const [rep, pend, flag] = await Promise.all([
+      adminApi.listReports(1).catch(() => null),
+      moderationApi.reviewPosts('pending').catch(() => null),
+      moderationApi.reviewPosts('flagged').catch(() => null),
+    ]);
+    let failed = false;
     // 待审举报：按「被举报内容」计（同一内容多人举报只算 1），与举报审核里合并后的卡片数一致
-    adminApi.listReports(1)
-      .then(r => { if (alive && r.success) setPendingCount(r.total ?? 0); else if (alive) setLoadFailed(true); })
-      .catch(() => { if (alive) setLoadFailed(true); });
-    // 待巡查帖子：pending 队列剩余数（巡查员视角已排除本人帖子与已投票的帖子）
-    moderationApi.reviewPosts('pending')
-      .then(r => { if (alive && r.success) setPostTotal(r.total ?? 0); else if (alive) setLoadFailed(true); })
-      .catch(() => { if (alive) setLoadFailed(true); });
-    return () => { alive = false; };
+    if (rep?.success) setPendingCount(rep.total ?? 0); else failed = true;
+    if (pend?.success) setPendPosts(pend.total ?? 0); else failed = true;
+    if (flag?.success) setFlagPosts(flag.total ?? 0); else failed = true;
+    setLoadFailed(failed);
+    setRefreshedAt(new Date().toLocaleTimeString('zh-CN', { hour12: false }));
+    setRefreshing(false);
   }, []);
 
+  useEffect(() => { load(); }, [load]);
+
+  // 回到这个页面/标签页重新可见时自动刷新：避免一直停在概览时数字不更新（处理完内容回来仍是旧数字）
+  useEffect(() => {
+    const onVisible = () => { if (document.visibilityState === 'visible') load(); };
+    window.addEventListener('focus', onVisible);
+    document.addEventListener('visibilitychange', onVisible);
+    return () => {
+      window.removeEventListener('focus', onVisible);
+      document.removeEventListener('visibilitychange', onVisible);
+    };
+  }, [load]);
+
   const forMe = isAdmin ? '' : '（待我处理）';
+  // 待巡查卡片的数字 = 待巡查 + 待复核，和「帖子巡查」标签页里能翻到的条数一致
+  const postTotal = pendPosts === null && flagPosts === null
+    ? null
+    : (pendPosts ?? 0) + (flagPosts ?? 0);
   // 概览卡用「待办」类图标（警示 / 待检查清单），与下方功能标签的「旗 / 报纸」区分开，
   // 避免「待审举报」和「举报审核」用同一个旗子让人分不清（用户反馈）
   const cards = [
-    { icon: faTriangleExclamation, label: `待审举报${forMe}`, value: pendingCount, color: 'text-red-600', bg: 'bg-red-50', tab: 'reports' as Tab, emphasize: true },
-    { icon: faClipboardCheck, label: `待巡查帖子${forMe}`, value: postTotal, color: 'text-primary-600', bg: 'bg-primary-50', tab: 'posts' as Tab },
+    { icon: faTriangleExclamation, label: `待审举报${forMe}`, value: pendingCount, color: 'text-red-600', bg: 'bg-red-50', tab: 'reports' as Tab, emphasize: true, sub: '' },
+    {
+      icon: faClipboardCheck, label: `待巡查/待复核帖子${forMe}`, value: postTotal, color: 'text-primary-600', bg: 'bg-primary-50', tab: 'posts' as Tab,
+      sub: (pendPosts !== null && flagPosts !== null && flagPosts > 0) ? `待巡查 ${pendPosts} · 待复核 ${flagPosts}` : '',
+    },
   ];
 
   // 巡查等级进度：expNeededForLevel 为 null 或 ≤ 本级经验时视为封顶（进度条满格）
@@ -103,11 +132,20 @@ function OverviewTab({ go, stats, isAdmin }: { go: (t: Tab) => void; stats: Patr
             </div>
             <p className="text-2xl font-bold">{c.value === null ? '—' : c.value}</p>
             <p className="text-sm text-gray-500">{c.label}{c.emphasize && pendingCount ? '（有新的需处理）' : ''}</p>
+            {c.sub && <p className="text-[11px] text-gray-400 mt-0.5">{c.sub}</p>}
           </button>
         ))}
       </div>
+      {/* 刷新：停在概览页时也能手动拉最新（切回本页/窗口重新聚焦时也会自动刷新） */}
+      <div className="flex items-center gap-2 mt-2">
+        <button onClick={load} disabled={refreshing}
+          className="text-xs text-primary-600 hover:bg-primary-50 rounded-lg px-2 py-1 transition disabled:opacity-50">
+          {refreshing ? '刷新中…' : '⟳ 刷新数量'}
+        </button>
+        {refreshedAt && <span className="text-[11px] text-gray-400">更新于 {refreshedAt}</span>}
+      </div>
       {loadFailed && (
-        <p className="text-xs text-amber-600 mt-2">数量获取失败（显示“—”）——点上方卡片进入栏目查看实际待处理内容</p>
+        <p className="text-xs text-amber-600 mt-1">数量获取失败（显示“—”）——点上方卡片进入栏目查看实际待处理内容</p>
       )}
       {/* 我的巡查战绩（成就与等级；未加载成功时静默降级为加载提示） */}
       <div className="mt-6 bg-white rounded-xl border border-gray-100 p-4">
