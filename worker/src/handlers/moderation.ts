@@ -207,7 +207,9 @@ moderation.post('/review-post', requireAdmin, async (c) => {
         .bind(user.userId, reason || '内容存疑', postId));
       message = '已标记为存疑，等待其他巡查员复核';
     } else if (action === 'violation') {
-      // 违规第 1 票：进入待复核队列（violation 状态前台隐藏）
+      // 违规第 1 票：进入待复核队列（queue=flagged，仅巡查员/管理员可见该队列）。
+      // 帖子本身**不再前台隐藏**：单票即对所有人隐藏会造成「没下架却凭空消失」，
+      // 只有复核票数达阈值的真正打回（rejected）才隐藏（2026-09-13 修复）
       stmts.push(db.prepare("UPDATE posts SET review_status = 'violation', flagged_by = ?, flagged_reason = ?, violation_count = 1 WHERE id = ?")
         .bind(user.userId, reason || '疑似违规', postId));
       message = `已标记违规（${violCnt}/${vLimit} 人），等待其他巡查员复核`;

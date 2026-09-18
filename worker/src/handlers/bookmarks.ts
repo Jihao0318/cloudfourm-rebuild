@@ -64,14 +64,14 @@ bookmarks.get('/', requireAuth, async (c) => {
       FROM bookmarks b
       JOIN posts p ON b.post_id = p.id AND p.deleted_at IS NULL
       LEFT JOIN users u ON p.user_id = u.id
-      WHERE b.user_id = ? AND p.review_status NOT IN ('violation', 'rejected')
+      WHERE b.user_id = ? AND p.review_status != 'rejected'
       ORDER BY b.created_at DESC
       LIMIT ? OFFSET ?
     `).bind(user.userId, pageSize, offset).all(),
     c.env.DB.prepare(`
       SELECT COUNT(*) as count FROM bookmarks b
       JOIN posts p ON b.post_id = p.id AND p.deleted_at IS NULL
-      WHERE b.user_id = ? AND p.review_status NOT IN ('violation', 'rejected')
+      WHERE b.user_id = ? AND p.review_status != 'rejected'
     `).bind(user.userId).first<{ count: number }>(),
   ]);
 

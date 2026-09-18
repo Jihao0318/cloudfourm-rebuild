@@ -474,7 +474,7 @@ function PostsPatrol() {
                     </>
                   ) : (
                     <span className={`text-[11px] px-2 py-0.5 rounded font-medium ${current.review_status === 'violation' ? 'bg-red-50 text-red-600' : 'bg-amber-50 text-amber-600'}`}>
-                      {current.review_status === 'violation' ? `违规复核中（违规 ${current.violation_count}/${violationLimit} 人）` : 'AI 不确定 · 存疑复核中'}
+                      {current.review_status === 'violation' ? `违规复核中（违规 ${current.violation_count}/${violationLimit} 人 · 达标前帖子仍正常显示）` : 'AI 不确定 · 存疑复核中'}
                     </span>
                   )}
                   {skippedIds.has(current.id) && (

@@ -146,9 +146,11 @@ export async function listPosts(
   let whereClause = includeDeleted ? 'WHERE 1=1' : 'WHERE p.deleted_at IS NULL';
   const params: any[] = [];
 
-  // 前台过滤「违规待复核 / 打回待编辑」的帖子（巡查标记中不对外展示；后台 includeDeleted=true 时可见）
+  // 前台只过滤「打回待编辑」的帖子（rejected：等作者修改后重新提交，仅作者与管理员可见）。
+  // 注意：review_status='violation'（有巡查员投了违规、复核票数未达阈值）**不再隐藏**——
+  // 单票即对所有人隐藏会造成「帖子没下架却凭空消失」，改为只有真正打回/下架才隐藏。
   if (!includeDeleted) {
-    whereClause += " AND p.review_status NOT IN ('violation', 'rejected')";
+    whereClause += " AND p.review_status != 'rejected'";
   }
 
   // 他人主页查看时过滤匿名帖，避免泄露（本人主页传 viewerUserId 则不过滤）
@@ -327,7 +329,7 @@ export async function getPostById(db: D1Database, postId: number): Promise<any |
       LEFT JOIN shop_items si ON p.decoration_id = si.id
       LEFT JOIN shop_items tsi ON p.title_decoration_id = tsi.id
       LEFT JOIN red_packets rp ON rp.post_id = p.id
-      WHERE p.id = ? AND p.deleted_at IS NULL AND p.review_status != 'violation'
+      WHERE p.id = ? AND p.deleted_at IS NULL
     `)
     .bind(postId)
     .first();
