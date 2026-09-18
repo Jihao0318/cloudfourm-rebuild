@@ -216,7 +216,7 @@ auth.post('/register', async (c) => {
     data: {
       token,
       refresh_token,
-      user: { id: user.id, username: user.username, email: user.email, role: user.role, email_verified: 0 },
+      user: await buildUserPayload(c.env.DB, user as unknown as User),
       // 注册已发验证码：前端跳验证页时用它显示「验证码已发送至 xxx」，无需再触发一次发送
       masked_email: maskEmail(user.email),
       code_sent: regCode.sent,
@@ -367,7 +367,7 @@ auth.post('/login', async (c) => {
     data: {
       token,
       refresh_token,
-      user: { id: row.id, username: row.username, email: row.email, role: row.role, avatar_url: row.avatar_url, scheduled_deleted_at: row.scheduled_deleted_at, custom_title: row.custom_title, nick_theme: row.nick_theme },
+      user: await buildUserPayload(c.env.DB, row as unknown as User),
     },
   });
 });
@@ -870,6 +870,53 @@ auth.post('/cancel-deletion', requireAuth, async (c) => {
   return c.json({ success: true, message: '已取消账户注销' });
 });
 
+/**
+ * 统一的「当前用户」返回体（/auth/me、/auth/login、/auth/register 共用）。
+ *
+ * 为什么要共用：登录/注册原来只返回 id/username/email/role 几个字段，缺少 vip_tier、is_vip、
+ * 徽章/头像框等，前端登录后整个会话都拿不到这些值——例如积分页据此判断转账费率，字段缺失时
+ * 会落到兜底 15%，导致 VIP 用户看到的手续费率是错的（2026-09-18 用户反馈「显示有误」）。
+ * 现在三个接口返回同一份完整字段，杜绝「登录后缺字段、刷新后才正常」这类问题。
+ */
+async function buildUserPayload(
+  db: D1Database,
+  fullUser: User
+): Promise<Record<string, unknown>> {
+  // 封禁状态：仅当解封时间还在未来时才返回（与前端「当前是否被封」判断一致）
+  let banned_until: string | null = null;
+  if (fullUser.banned_until) {
+    const bannedUntil = new Date(fullUser.banned_until.replace(' ', 'T') + 'Z');
+    if (bannedUntil.getTime() > Date.now()) banned_until = fullUser.banned_until;
+  }
+
+  // VIP 状态（仅未过期的算数）
+  const vipInfo = await db
+    .prepare("SELECT tier FROM user_vips WHERE user_id = ? AND expires_at > datetime('now')")
+    .bind(fullUser.id)
+    .first<{ tier: string }>();
+
+  return {
+    id: fullUser.id,
+    username: fullUser.username,
+    email: fullUser.email,
+    avatar_url: fullUser.avatar_url,
+    bio: fullUser.bio ?? null,
+    role: fullUser.role,
+    email_verified: fullUser.email_verified || 0,
+    banned_until,
+    scheduled_deleted_at: fullUser.scheduled_deleted_at,
+    is_vip: !!vipInfo,
+    vip_tier: vipInfo?.tier || null,
+    custom_title: fullUser.custom_title || null,
+    nick_theme: fullUser.nick_theme || null,
+    title_badge: fullUser.title_badge || null,
+    title_badge_expires_at: fullUser.title_badge_expires_at || null,
+    avatar_frame: fullUser.avatar_frame || null,
+    avatar_frame_expires_at: fullUser.avatar_frame_expires_at || null,
+    created_at: fullUser.created_at,
+  };
+}
+
 // 获取当前用户
 auth.get('/me', async (c) => {
   const user: JWTPayload = c.get('user');
@@ -878,42 +925,7 @@ auth.get('/me', async (c) => {
   const fullUser: User | undefined = c.get('dbUser');
   if (!fullUser) return c.json({ success: false, error: '用户不存在' }, 404);
 
-  // 封禁状态
-  let banned_until: string | null = null;
-  if (fullUser.banned_until) {
-    const bannedUntil = new Date(fullUser.banned_until.replace(' ', 'T') + 'Z');
-    if (bannedUntil.getTime() > Date.now()) banned_until = fullUser.banned_until;
-  }
-
-  // 查询 VIP 状态
-  const vipInfo = await c.env.DB
-    .prepare("SELECT tier FROM user_vips WHERE user_id = ? AND expires_at > datetime('now')")
-    .bind(user.userId)
-    .first<{ tier: string }>();
-
-  return c.json({
-    success: true,
-    data: {
-      id: fullUser.id,
-      username: fullUser.username,
-      email: fullUser.email,
-      avatar_url: fullUser.avatar_url,
-      bio: fullUser.bio,
-      role: fullUser.role,
-      email_verified: fullUser.email_verified || 0,
-      banned_until,
-      scheduled_deleted_at: fullUser.scheduled_deleted_at,
-      is_vip: !!vipInfo,
-      vip_tier: vipInfo?.tier || null,
-      custom_title: fullUser.custom_title || null,
-      nick_theme: fullUser.nick_theme || null,
-      title_badge: fullUser.title_badge || null,
-      title_badge_expires_at: fullUser.title_badge_expires_at || null,
-      avatar_frame: fullUser.avatar_frame || null,
-      avatar_frame_expires_at: fullUser.avatar_frame_expires_at || null,
-      created_at: fullUser.created_at,
-    },
-  });
+  return c.json({ success: true, data: await buildUserPayload(c.env.DB, fullUser) });
 });
 
 // 刷新 token — 轮换制：每次刷新删旧发新；已被轮换的旧 token 被重用视为重放攻击，吊销该用户全部会话
