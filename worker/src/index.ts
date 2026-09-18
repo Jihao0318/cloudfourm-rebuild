@@ -4,7 +4,6 @@ import { setupRoutes } from './routes';
 import { cleanupUser } from './middleware/auth';
 import { hardDeletePost } from './db/queries';
 import { cleanupTransactions } from './handlers/coins';
-import { recalculateLeaderboard } from './handlers/leaderboard';
 import { consumeAiReviewBatch } from './aiReview';
 
 const app = new Hono<{ Bindings: Env }>();
@@ -168,12 +167,8 @@ export default {
       } catch (e) {
         console.error('scheduled cleanup coin transactions error:', e);
       }
-      try {
-        await recalculateLeaderboard(env.DB);
-        console.log('scheduled cleanup: leaderboard cache recalculated');
-      } catch (e) {
-        console.error('scheduled recalculate leaderboard error:', e);
-      }
+      // 积分榜已改为实时读 user_balances（见 handlers/leaderboard.ts），
+      // 不再需要每日物化 leaderboard_cache —— 物化会让榜单最长滞后 24 小时（用户反馈「积分榜不同步」）
     })());
   },
 
