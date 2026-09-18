@@ -891,14 +891,24 @@ admin.get('/reports', async (c) => {
       : " AND NOT EXISTS (SELECT 1 FROM report_review_actions rra WHERE rra.target_type = r.target_type AND rra.target_id = r.target_id AND rra.reviewer_id = ?)";
     const bindMyId = isAdmin ? [] : [myId];
 
+    // 计数与分页都以「被举报内容」为单位：同一内容可能被多人举报（多条记录），界面上合并为一张卡片。
+    // 早期按记录行计数会出现「卡片说 N 条、实际只有 M 张卡」和「翻页翻到同一内容的重复记录」两种错位
     const total = await c.env.DB
-      .prepare("SELECT COUNT(*) as cnt FROM reports r WHERE r.status = 'pending' AND r.target_id IS NOT NULL" + visibilityClause)
+      .prepare(`
+        SELECT COUNT(*) as cnt FROM (
+          SELECT 1 FROM reports r
+          WHERE r.status = 'pending' AND r.target_id IS NOT NULL${visibilityClause}
+          GROUP BY r.target_type, r.target_id
+        )
+      `)
       .bind(...bindMyId)
       .first<{ cnt: number }>();
 
     const list = await c.env.DB
       .prepare(`
         SELECT r.id, r.post_id, r.target_type, r.target_id, r.reporter_id, r.reason, r.created_at,
+               -- 该内容一共收到多少条待处理举报（≥2 时界面提示「共 N 条举报」）
+               (SELECT COUNT(*) FROM reports rc WHERE rc.target_type = r.target_type AND rc.target_id = r.target_id AND rc.status = 'pending' AND rc.target_id IS NOT NULL) AS report_count,
                -- 多人复核票数（同一被举报内容共享票数）与我的投票
                (SELECT COUNT(*) FROM report_review_actions rra WHERE rra.target_type = r.target_type AND rra.target_id = r.target_id AND rra.action = 'confirm') AS confirm_count,
                (SELECT COUNT(*) FROM report_review_actions rra WHERE rra.target_type = r.target_type AND rra.target_id = r.target_id AND rra.action = 'pass') AS pass_count,
@@ -921,6 +931,8 @@ admin.get('/reports', async (c) => {
         LEFT JOIN users cu ON c.user_id = cu.id
         LEFT JOIN users u ON r.reporter_id = u.id
         WHERE r.status = 'pending' AND r.target_id IS NOT NULL${visibilityClause}
+          -- 每个被举报内容只取最早那条举报作为代表行（其余同目标记录只计入 report_count）
+          AND r.id = (SELECT MIN(r2.id) FROM reports r2 WHERE r2.status = 'pending' AND r2.target_id IS NOT NULL AND r2.target_type = r.target_type AND r2.target_id = r.target_id)
         ORDER BY r.created_at ASC LIMIT ? OFFSET ?
       `)
       .bind(...bindMyId, myId, pageSize, offset)
@@ -971,7 +983,12 @@ admin.get('/reports', async (c) => {
     const vLimit = parseInt((await getSetting(c.env.DB, 'report_violation_limit')) || '') || 3;
     const pLimit = parseInt((await getSetting(c.env.DB, 'report_pass_limit')) || '') || 3;
     return c.json({ success: true, data: rows, total: total?.cnt || 0, page, pageSize, limit: vLimit, passLimit: pLimit, adminVeto: isAdmin });
-  } catch { return c.json({ success: true, data: [], total: 0, page: 1, pageSize: 20 }); }
+  } catch (err) {
+    // 不能吞错返回「data: [], total: 0」——那会让巡查台/后台的待审举报数量显示成 0（看起来像没有待审内容），
+    // 前端拿到 success=false 会显式提示加载失败（数量保持“—”，不会给出错误数字）
+    console.error('[admin/reports] 举报列表查询失败:', err);
+    return c.json({ success: false, error: '举报列表加载失败，请重试' }, 500);
+  }
 });
 
 // 多人复核投票（仿帖子巡查）：confirm 达到 review_violation_limit 人确认违规 → 删除；

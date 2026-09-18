@@ -58,19 +58,29 @@ function Pager({ page, total, pageSize = 10, onChange }: { page: number; total: 
 type Tab = 'overview' | 'reports' | 'posts' | 'appeals' | 'ailogs';
 
 // ===== 概览 =====
-function OverviewTab({ go, stats }: { go: (t: Tab) => void; stats: PatrolStats | null }) {
+function OverviewTab({ go, stats, isAdmin }: { go: (t: Tab) => void; stats: PatrolStats | null; isAdmin: boolean }) {
   const [pendingCount, setPendingCount] = useState<number | null>(null);
   const [postTotal, setPostTotal] = useState<number | null>(null);
+  // 拉取失败时保持“—”（不显示错误的 0），并提示可进入栏目查看
+  const [loadFailed, setLoadFailed] = useState(false);
 
   useEffect(() => {
-    adminApi.listReports(1).then(r => { if (r.success) setPendingCount(r.total || 0); }).catch(() => {});
-    // 「最新帖子」= 待巡查（pending）剩余数：新发布未审核、还需巡查的帖子数量
-    moderationApi.reviewPosts('pending').then(r => { if (r.success) setPostTotal(r.total || 0); }).catch(() => {});
+    let alive = true;
+    // 待审举报：按「被举报内容」计（同一内容多人举报只算 1），与举报审核里合并后的卡片数一致
+    adminApi.listReports(1)
+      .then(r => { if (alive && r.success) setPendingCount(r.total ?? 0); else if (alive) setLoadFailed(true); })
+      .catch(() => { if (alive) setLoadFailed(true); });
+    // 待巡查帖子：pending 队列剩余数（巡查员视角已排除本人帖子与已投票的帖子）
+    moderationApi.reviewPosts('pending')
+      .then(r => { if (alive && r.success) setPostTotal(r.total ?? 0); else if (alive) setLoadFailed(true); })
+      .catch(() => { if (alive) setLoadFailed(true); });
+    return () => { alive = false; };
   }, []);
 
+  const forMe = isAdmin ? '' : '（待我处理）';
   const cards = [
-    { icon: faFlag, label: '待审举报', value: pendingCount, color: 'text-red-600', bg: 'bg-red-50', tab: 'reports' as Tab, emphasize: true },
-    { icon: faNewspaper, label: '待巡查帖子', value: postTotal, color: 'text-primary-600', bg: 'bg-primary-50', tab: 'posts' as Tab },
+    { icon: faFlag, label: `待审举报${forMe}`, value: pendingCount, color: 'text-red-600', bg: 'bg-red-50', tab: 'reports' as Tab, emphasize: true },
+    { icon: faNewspaper, label: `待巡查帖子${forMe}`, value: postTotal, color: 'text-primary-600', bg: 'bg-primary-50', tab: 'posts' as Tab },
   ];
 
   // 巡查等级进度：expNeededForLevel 为 null 或 ≤ 本级经验时视为封顶（进度条满格）
@@ -94,6 +104,9 @@ function OverviewTab({ go, stats }: { go: (t: Tab) => void; stats: PatrolStats |
           </button>
         ))}
       </div>
+      {loadFailed && (
+        <p className="text-xs text-amber-600 mt-2">数量获取失败（显示“—”）——点上方卡片进入栏目查看实际待处理内容</p>
+      )}
       {/* 我的巡查战绩（成就与等级；未加载成功时静默降级为加载提示） */}
       <div className="mt-6 bg-white rounded-xl border border-gray-100 p-4">
         {stats === null ? (
@@ -151,6 +164,9 @@ function ReportsTab() {
   const [busy, setBusy] = useState(false);
   const [limit, setLimit] = useState(3); // 确认违规阈值（后台 report_violation_limit，默认 3）
   const [passLimit, setPassLimit] = useState(3); // 「没问题」放行阈值（后台 report_pass_limit，默认 3）
+  // 分页大小以后端返回为准（同一被举报内容可能有多条举报，界面按内容合并展示，
+  // total/分页都按「内容」计；早期前端写死 10 而后端每页 20，页数与实际不符）
+  const [pageSize, setPageSize] = useState(20);
   // 跳过队列：跳过的目标排到末尾，全部处理完后再回来（除非已被受理完成——重新加载后自动消失）
   const [skippedKeys, setSkippedKeys] = useState<Set<string>>(new Set());
 
@@ -160,6 +176,7 @@ function ReportsTab() {
       if (r.success) {
         setList(r.data || []);
         setTotal(r.total || 0);
+        if (r.pageSize) setPageSize(r.pageSize);
         setIndex(0); // 翻页/刷新后回到列表头，避免 index 越界显示空态
         if (r.limit) setLimit(r.limit);
         if (r.passLimit) setPassLimit(r.passLimit);
@@ -241,6 +258,9 @@ function ReportsTab() {
                   {current.target_type === 'post' ? '📄 帖子举报' : '💬 评论举报'}
                 </span>
                 <span className="text-xs text-gray-400 ml-auto">
+                  {current.report_count > 1 && (
+                    <span className="text-red-500 font-medium mr-1.5">共 {current.report_count} 条举报 ·</span>
+                  )}
                   举报人：{current.reporter_name || '已注销'} · {formatDateTime(current.created_at)}
                 </span>
               </div>
@@ -350,7 +370,7 @@ function ReportsTab() {
             </div>
         </>
       )}
-      <Pager page={page} total={total} onChange={setPage} />
+      <Pager page={page} total={total} pageSize={pageSize} onChange={setPage} />
     </div>
   );
 }
@@ -767,7 +787,7 @@ export default function Moderator() {
         ))}
       </div>
 
-      {tab === 'overview' && <OverviewTab go={setTab} stats={patrolStats} />}
+      {tab === 'overview' && <OverviewTab go={setTab} stats={patrolStats} isAdmin={user.role === 'admin'} />}
       {tab === 'reports' && <ReportsTab />}
       {tab === 'posts' && <PostsPatrol />}
       {tab === 'appeals' && <AppealsReview />}

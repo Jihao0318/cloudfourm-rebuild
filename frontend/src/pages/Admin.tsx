@@ -99,13 +99,16 @@ const tdCls = 'px-4 py-3';
 function StatsPanel({ go }: { go: (id: AdminMenuId) => void }) {
   const [stats, setStats] = useState<any>(null);
   const [detail, setDetail] = useState<any>(null);
-  const [pendingReports, setPendingReports] = useState(0);
+  const [pendingReports, setPendingReports] = useState<number | null>(null);
   const [announcement, setAnnouncement] = useState('');
 
   useEffect(() => {
     adminApi.getStats().then(r => r.success && setStats(r.data));
     adminApi.getStatsDetail().then(r => r.success && setDetail(r.data));
-    adminApi.listReports(1).then(r => { if (r.success) setPendingReports(r.total || 0); }).catch(() => {});
+    // 待审举报按「被举报内容」计（同一内容多人举报只算 1）；失败保持 null → 显示“—”而不是错误的 0
+    adminApi.listReports(1)
+      .then(r => { if (r.success) setPendingReports(r.total ?? 0); })
+      .catch(() => {});
     adminApi.getSettings().then(r => { if (r.success) setAnnouncement((r.data || {}).announcement || ''); }).catch(() => {});
   }, []);
 
@@ -134,10 +137,10 @@ function StatsPanel({ go }: { go: (id: AdminMenuId) => void }) {
       {/* 待办 */}
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
         <button onClick={() => go('reports')}
-          className={`flex items-center justify-between bg-white rounded-xl border p-4 text-left ${pendingReports > 0 ? 'border-red-200' : 'border-gray-100'}`}>
+          className={`flex items-center justify-between bg-white rounded-xl border p-4 text-left ${pendingReports ? 'border-red-200' : 'border-gray-100'}`}>
           <div>
             <p className="text-xs text-gray-400 mb-1">待审举报</p>
-            <p className={`text-lg font-bold ${pendingReports > 0 ? 'text-red-600' : 'text-gray-400'}`}>{pendingReports} 条</p>
+            <p className={`text-lg font-bold ${pendingReports ? 'text-red-600' : 'text-gray-400'}`}>{pendingReports === null ? '—' : `${pendingReports} 个内容`}</p>
           </div>
           <span className="text-2xl">🚩</span>
         </button>
