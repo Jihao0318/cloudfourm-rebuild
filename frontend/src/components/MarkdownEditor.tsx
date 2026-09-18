@@ -1,4 +1,4 @@
-import { useRef, useState, useCallback, useEffect } from 'react';
+import { useRef, useState, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
@@ -113,7 +113,6 @@ interface ToolbarAction {
 
 export default function MarkdownEditor({ value, onChange, placeholder, minHeight = '300px' }: MarkdownEditorProps) {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
-  const rootRef = useRef<HTMLDivElement>(null);   // 编辑器最外层容器（用于判断拖拽落点是否在编辑器内）
   const fileInputRef = useRef<HTMLInputElement>(null);
   const imageBtnRef = useRef<HTMLButtonElement>(null); // 图片菜单锚点（fixed 定位计算坐标用）
 
@@ -121,7 +120,6 @@ export default function MarkdownEditor({ value, onChange, placeholder, minHeight
   const [uploading, setUploading] = useState(false);
   const [uploadStatus, setUploadStatus] = useState('正在处理文件...');
   const [videoQuality, setVideoQuality] = useState<VideoQuality>('720p');
-  const [dragActive, setDragActive] = useState(false);
   // 上传完成后递增，让媒体管理条自动展开给用户看新内容
   const [mediaExpandSignal, setMediaExpandSignal] = useState(0);
   const { toast } = useToast();
@@ -252,9 +250,6 @@ export default function MarkdownEditor({ value, onChange, placeholder, minHeight
     }
   }, [insertAt, toast, videoQuality]);
 
-  /** 兼容旧调用点：单文件走同一套流程 */
-  const uploadImage = useCallback((file: File) => handleFiles([file]), [handleFiles]);
-
   // 嵌入链接处理
   const handleEmbedLink = useCallback(() => {
     const url = embedUrl.trim();
@@ -293,81 +288,12 @@ export default function MarkdownEditor({ value, onChange, placeholder, minHeight
     handleFiles(files);
   }, [handleFiles]);
 
-  /**
-   * 拖拽上传：挂在 document 上统一接管（而不是只挂编辑器容器）。
-   *
-   * 为什么必须这么做（2026-09-18 排查）：
-   *   ① 只在编辑器容器上挂 onDrop 时，把文件拖到 textarea 上 React 不会派发到外层处理器
-   *      （诊断结果：原生事件冒泡到了外层，但外层 onDrop 没被调用）→ 表现为「拖拽没反应」；
-   *   ② 拖到编辑器**以外**的区域（标题框、页面空白）时，浏览器默认行为是直接打开这个文件
-   *      → 整个 SPA 被卸载，看起来像「一拖拽就闪退」；
-   *   ③ 原来用 `dataTransfer.types.includes(...)` 判断，而 Safari 的 types 是 DOMStringList
-   *      （没有 includes）→ dragover 一触发就抛异常，React 卸载整棵树 → 白屏。
-   * 因此这里改为：document 级监听 + 用 Array.from 做安全判断 + 全流程 try/catch 兜底，
-   * 任何异常都只影响本次上传，绝不让页面崩掉。
-   */
-  const handleFilesRef = useRef(handleFiles);
-  handleFilesRef.current = handleFiles;
+  // 说明：本编辑器不再支持「拖拽文件上传」（2026-09-18 按用户要求废弃）。
+  // 上传入口只有两个：工具栏「上传图片/视频（可多选）」与粘贴。相关拖拽监听/高亮状态已删除，
+  // 依赖的 document 级 drag/drop 监听、rootRef、dragActive 等一并移除，避免留下无用分支。
 
-  useEffect(() => {
-    // Safari 的 types 是 DOMStringList（可迭代但无 includes）；统一转成数组再判断
-    const dragTypes = (dt: DataTransfer | null): string[] => {
-      if (!dt) return [];
-      try { return Array.from(dt.types as unknown as ArrayLike<string>); } catch { return []; }
-    };
-    const looksLikeFileDrag = (dt: DataTransfer | null): boolean => {
-      const types = dragTypes(dt);
-      return types.includes('Files') || types.includes('application/x-moz-file');
-    };
-    const insideEditor = (target: EventTarget | null): boolean => {
-      const el = target as Node | null;
-      return !!(el && rootRef.current && rootRef.current.contains(el));
-    };
 
-    const onDragOver = (e: DragEvent) => {
-      try {
-        if (!looksLikeFileDrag(e.dataTransfer)) return;
-        e.preventDefault();                 // 必须：否则浏览器不允许 drop
-        if (e.dataTransfer) e.dataTransfer.dropEffect = 'copy';
-        setDragActive(true);
-      } catch { /* 拖拽态判断失败不影响页面 */ }
-    };
-    const onDragLeave = (e: DragEvent) => {
-      // 离开窗口时（relatedTarget 为 null）才取消高亮，避免掠过子元素时闪烁
-      if (e.relatedTarget === null) setDragActive(false);
-    };
-    const onDrop = (e: DragEvent) => {
-      try {
-        const isFile = looksLikeFileDrag(e.dataTransfer);
-        if (!isFile) {
-          // 非文件拖拽（例如从别的网页拖来一段文字/图片链接）：
-          // 落在编辑器里保持浏览器默认（当作文本插入），落在编辑器外一律拦掉，避免页面被跳走
-          if (!insideEditor(e.target)) e.preventDefault();
-          return;
-        }
-        // 文件拖拽：无论落在页面哪个位置都拦掉默认行为（否则浏览器会直接打开文件 → 页面闪退）
-        e.preventDefault();
-        setDragActive(false);
-        const files = Array.from(e.dataTransfer?.files || [])
-          .filter(f => f.type.startsWith('image/') || f.type.startsWith('video/'));
-        if (files.length) handleFilesRef.current(files);
-      } catch (err) {
-        console.error('[upload] 拖拽处理失败:', err);
-        setDragActive(false);
-      }
-    };
-
-    document.addEventListener('dragover', onDragOver);
-    document.addEventListener('dragleave', onDragLeave);
-    document.addEventListener('drop', onDrop);
-    return () => {
-      document.removeEventListener('dragover', onDragOver);
-      document.removeEventListener('dragleave', onDragLeave);
-      document.removeEventListener('drop', onDrop);
-    };
-  }, []);
-
-  // 光标插入位置：拖拽上传以「开始处理时的光标」为准（由 handleFiles 内部记录）
+  // 插入位置：以「开始处理时的光标」为准（由 handleFiles 内部记录），避免处理期间点击别处导致错位
 
   const actions: ToolbarAction[] = [
     {
@@ -435,7 +361,7 @@ export default function MarkdownEditor({ value, onChange, placeholder, minHeight
   ];
 
   return (
-    <div ref={rootRef} className={`border rounded-xl bg-white shadow-sm transition ${dragActive ? 'border-primary-400 ring-2 ring-primary-100' : 'border-gray-200'}`}>
+    <div className="border border-gray-200 rounded-xl bg-white shadow-sm">
       {/* 工具栏：overflow-x-auto 允许 375px 下左组横向滚动；图标按钮 p-1 shrink-0 收紧宽度 */}
       <div className="relative flex items-center justify-between px-2 py-1.5 bg-gray-50/80 border-b border-gray-200 rounded-t-xl overflow-x-auto">
         <div className="flex items-center gap-0.5">
@@ -532,7 +458,7 @@ export default function MarkdownEditor({ value, onChange, placeholder, minHeight
         <>
           <textarea ref={textareaRef} value={value} onChange={e => onChange(e.target.value)}
             onPaste={handlePaste}
-            placeholder={placeholder || '支持 Markdown；图片/视频可多选上传（最多 9 个），也能直接粘贴或拖进来'}
+            placeholder={placeholder || '支持 Markdown；图片/视频可多选上传（最多 9 个），也可以直接粘贴图片'}
             required
             className="w-full px-5 py-4 outline-none resize-y font-mono text-base leading-relaxed text-gray-800 placeholder-gray-400"
             style={{ minHeight }}

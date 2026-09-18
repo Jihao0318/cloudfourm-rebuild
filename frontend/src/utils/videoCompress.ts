@@ -14,7 +14,7 @@
 export type VideoQuality = '480p' | '720p' | '1080p';
 
 /** 与图片共用同一条 19MB 硬上限（图床限制），压缩目标留出余量 */
-export const VIDEO_UPLOAD_LIMIT_BYTES = 19 * 1024 * 1024;
+const VIDEO_UPLOAD_LIMIT_BYTES = 19 * 1024 * 1024;
 const VIDEO_TARGET_BYTES = 12 * 1024 * 1024;
 
 /** 清晰度档位：目标高度 + 视频码率（音频另算 96kbps） */
@@ -26,7 +26,7 @@ export const VIDEO_QUALITY_META: Record<VideoQuality, { label: string; height: n
 
 const AUDIO_BPS = 96 * 1024;
 
-export interface VideoProbe {
+interface VideoProbe {
   duration: number;
   width: number;
   height: number;
@@ -38,7 +38,7 @@ export interface VideoProbe {
   maxSeconds: number;
 }
 
-export type VideoMode = 'pass' | 'webcodecs' | 'recorder' | 'blocked';
+type VideoMode = 'pass' | 'webcodecs' | 'recorder' | 'blocked';
 
 export interface VideoCompressResult {
   file: File;
@@ -52,13 +52,13 @@ export interface VideoCompressResult {
   elapsedMs?: number;
 }
 
-export function isIos(): boolean {
+function isIos(): boolean {
   return /iPad|iPhone|iPod/.test(navigator.userAgent)
     || (navigator.platform === 'MacIntel' && (navigator as unknown as { maxTouchPoints?: number }).maxTouchPoints! > 1);
 }
 
 /** 快路支持判断：WebCodecs 可用 + 源是 MP4/MOV（mp4box 可解封装） */
-export function canFastTranscode(file: File): boolean {
+function canFastTranscode(file: File): boolean {
   if (typeof (window as unknown as { VideoEncoder?: unknown }).VideoEncoder !== 'function') return false;
   return /\.(mp4|m4v|mov)$/i.test(file.name) || ['video/mp4', 'video/quicktime'].includes(file.type);
 }
@@ -87,7 +87,7 @@ function loadVideoMeta(url: string): Promise<HTMLVideoElement> {
 }
 
 /** 读元数据 + 按档位给出预估体积与可录时长 */
-export async function probeVideo(file: File, quality: VideoQuality): Promise<VideoProbe> {
+async function probeVideo(file: File, quality: VideoQuality): Promise<VideoProbe> {
   const url = URL.createObjectURL(file);
   try {
     const v = await loadVideoMeta(url);
