@@ -221,6 +221,10 @@ main {
 .prose img {
   @apply max-w-full max-h-80 md:max-h-96 w-auto rounded-lg my-3 cursor-pointer transition-opacity hover:opacity-90 object-contain;
 }
+/* 上传的视频（<video src controls>）：编辑器预览与正文渲染都不撑破容器 */
+.prose video {
+  @apply max-w-full rounded-lg my-3 bg-black;
+}
 
 /* VIP 昵称颜色 */
 .vip-nick-s-vip {

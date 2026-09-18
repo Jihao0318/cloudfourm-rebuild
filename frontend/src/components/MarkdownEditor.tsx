@@ -463,7 +463,7 @@ export default function MarkdownEditor({ value, onChange, placeholder, minHeight
       {mode === 'write' ? (
         <>
           <textarea ref={textareaRef} value={value} onChange={e => onChange(e.target.value)}
-            onPaste={handlePaste} onDrop={handleDrop}
+            onPaste={handlePaste}
             placeholder={placeholder || '支持 Markdown；图片/视频可多选上传（最多 9 个），也能直接粘贴或拖进来'}
             required
             className="w-full px-5 py-4 outline-none resize-y font-mono text-base leading-relaxed text-gray-800 placeholder-gray-400"
