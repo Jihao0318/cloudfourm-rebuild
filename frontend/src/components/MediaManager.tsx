@@ -21,6 +21,9 @@ export default function MediaManager({ value, onChange, expandSignal = 0, onInse
   const [expanded, setExpanded] = useState(false);
   const [dragIndex, setDragIndex] = useState<number | null>(null);
   const [overIndex, setOverIndex] = useState<number | null>(null);
+  // 仅鼠标允许原生拖拽：触屏上的 HTML5 拖拽（长按触发）在 iOS/Android 上极易把页面拖僵
+  // （用户反馈「长按缩略图整个页面卡住只能刷新」），触屏统一用 ← → 按钮排序
+  const [mouseDragEnabled, setMouseDragEnabled] = useState(false);
   const lastSignal = useRef(expandSignal);
 
   // 上传后自动展开（首次挂载不展开）
@@ -66,14 +69,28 @@ export default function MediaManager({ value, onChange, expandSignal = 0, onInse
           <div className="flex gap-2.5 overflow-x-auto pb-2">
             {tokens.map((t, i) => (
               <div key={`${t.kind}-${t.url}-${i}`}
-                draggable
+                draggable={mouseDragEnabled}
+                onPointerDown={e => { if (e.pointerType === 'mouse') setMouseDragEnabled(true); }}
+                onPointerUp={() => setMouseDragEnabled(false)}
+                onPointerCancel={() => setMouseDragEnabled(false)}
                 onDragStart={() => setDragIndex(i)}
-                onDragEnd={() => { setDragIndex(null); setOverIndex(null); }}
-                onDragOver={e => { e.preventDefault(); setOverIndex(i); }}
+                onDragEnd={() => { setDragIndex(null); setOverIndex(null); setMouseDragEnabled(false); }}
+                onDragOver={e => {
+                  // 只认我们自己发起的排序拖拽：别让浏览器里拖来的文件/文本触发排序
+                  if (dragIndex === null) return;
+                  e.preventDefault();
+                  setOverIndex(i);
+                }}
                 onDragLeave={() => setOverIndex(prev => (prev === i ? null : prev))}
-                onDrop={e => { e.preventDefault(); handleDrop(i); }}
-                className={`relative shrink-0 w-[92px] rounded-lg border bg-white cursor-grab transition ${
-                  dragIndex === i ? 'opacity-40' : ''
+                onDrop={e => {
+                  if (dragIndex === null) return;
+                  e.preventDefault();
+                  handleDrop(i);
+                }}
+                style={{ WebkitTouchCallout: 'none', userSelect: 'none', touchAction: 'manipulation' }}
+                className={`relative shrink-0 w-[92px] rounded-lg border bg-white transition ${
+                  mouseDragEnabled ? 'cursor-grab' : ''
+                } ${dragIndex === i ? 'opacity-40' : ''
                 } ${overIndex === i && dragIndex !== null && dragIndex !== i ? 'border-primary-500 ring-2 ring-primary-200' : 'border-gray-200'}`}
               >
                 <span className="absolute top-1 left-1 z-10 bg-black/55 text-white text-[10px] rounded px-1.5 py-0.5">{i + 1}</span>
@@ -83,11 +100,16 @@ export default function MediaManager({ value, onChange, expandSignal = 0, onInse
                   onClick={() => onInsertToken?.(t)}
                 >
                   {t.kind === 'image' ? (
-                    <img src={t.url} alt={t.alt} className="w-full h-full object-cover" loading="lazy" />
+                    // draggable=false + 不可选中：避免长按触发系统「保存/预览图片」菜单（移动端会卡住页面）
+                    <img src={t.url} alt={t.alt} className="w-full h-full object-cover pointer-events-none"
+                      loading="lazy" draggable={false} />
                   ) : (
-                    // 视频：用 preload=metadata + #t=0.1 取首帧当缩略图（不下载整个视频）
-                    <video src={`${t.url}#t=0.1`} preload="metadata" muted playsInline
-                      className="w-full h-full object-cover pointer-events-none" />
+                    // 视频缩略图用静态占位，不渲染真实 <video>：
+                    // 每个 video 元素都会占一个解码器，移动端长按还会触发原生媒体手势/尝试播放，是页面卡死的诱因
+                    <div className="w-full h-full flex flex-col items-center justify-center text-white/85 select-none">
+                      <svg viewBox="0 0 24 24" className="w-6 h-6" fill="currentColor"><path d="M8 5v14l11-7z" /></svg>
+                      <span className="text-[10px] mt-0.5">视频</span>
+                    </div>
                   )}
                 </div>
                 <div className="flex border-t border-gray-200">
@@ -105,7 +127,7 @@ export default function MediaManager({ value, onChange, expandSignal = 0, onInse
             ))}
           </div>
           <p className="text-[11px] text-gray-400">
-            拖动缩略图可排序，或用 ← → 按钮；✕ 只删除正文里的这一处标记（同一张图被引用多次时互不影响）
+            用 ← → 按钮调整顺序（电脑上也可以直接拖动缩略图）；✕ 只删除正文里的这一处标记（同一张图被引用多次时互不影响）
           </p>
         </div>
       )}
