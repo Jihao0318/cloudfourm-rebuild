@@ -1035,7 +1035,7 @@ admin.post('/exchange', async (c) => {
       b.per_user_limit ? parseInt(b.per_user_limit) : 0,
       b.ends_at || null, b.is_active === 0 ? 0 : 1,
     ).run();
-    return c.json({ success: r.meta.changes > 0, message: '兑换项已创建' });
+    return c.json({ success: r.meta.changes > 0, message: '兑换项已创建', id: r.meta.last_row_id });
   } catch (e) {
     console.error('[admin/exchange] 创建失败:', e);
     return c.json({ success: false, error: '创建失败' }, 500);
