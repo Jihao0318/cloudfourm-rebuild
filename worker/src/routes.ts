@@ -29,6 +29,7 @@ import tipsHandler from './handlers/tips';
 import decorationsHandler from './handlers/decorations';
 import lotteryCoinsHandler from './handlers/lottery-coins';
 import leaderboardHandler from './handlers/leaderboard';
+import exchangeHandler from './handlers/exchange';
 import unbanHandler from './handlers/unban';
 import itemsHandler from './handlers/items';
 import pushHandler from './handlers/push';
@@ -200,6 +201,7 @@ export function setupRoutes(app: Hono<{ Bindings: Env }>) {
 
   // 排行榜 — 公开
   app.route('/api/leaderboard', leaderboardHandler);
+  app.route('/api/exchange', exchangeHandler);
 
   // 自赎 + 管理审核 — 需登录
   app.use('/api/unban*', requireAuth);

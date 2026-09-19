@@ -6,6 +6,7 @@ import ErrorBoundary from './components/ErrorBoundary';
 import Skeleton from 'react-loading-skeleton';
 
 const Home = lazy(() => import('./pages/Home'));
+const Exchange = lazy(() => import('./pages/Exchange'));
 const Boards = lazy(() => import('./pages/Boards'));
 const Login = lazy(() => import('./pages/Login'));
 const Register = lazy(() => import('./pages/Register'));
@@ -88,6 +89,7 @@ export default function App() {
         <Route path="/shop" element={<Suspense fallback={<PageSkeleton />}><Shop /></Suspense>} />
         <Route path="/warehouse" element={<Suspense fallback={<PageSkeleton />}><Warehouse /></Suspense>} />
         <Route path="/lottery" element={<Suspense fallback={<PageSkeleton />}><LotteryCoins /></Suspense>} />
+        <Route path="/exchange" element={<Suspense fallback={<PageSkeleton />}><Exchange /></Suspense>} />
         <Route path="/leaderboard" element={<Suspense fallback={<PageSkeleton />}><Leaderboard /></Suspense>} />
         <Route path="/achievements" element={<Suspense fallback={<PageSkeleton />}><Achievements /></Suspense>} />
         <Route path="/active-effects" element={<Suspense fallback={<PageSkeleton />}><ActiveEffects /></Suspense>} />

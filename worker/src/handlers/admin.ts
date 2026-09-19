@@ -998,6 +998,84 @@ admin.get('/reports', async (c) => {
   }
 });
 
+// ===== 限时兑换商店（管理）=====
+// 兑换项发放的道具写入 user_lottery_items（与商城/抽奖同链路），回收价自动按商城价 30% 计算
+
+// 列表（全部，含未上架），带已兑换数量
+admin.get('/exchange', async (c) => {
+  try {
+    const rows = await c.env.DB.prepare(`
+      SELECT o.*,
+        (SELECT COUNT(*) FROM user_lottery_items li
+          WHERE li.item_type = o.item_type
+            AND json_extract(li.item_meta, '$.exchange_id') = o.id) AS sold
+      FROM exchange_offers o ORDER BY o.created_at DESC
+    `).all();
+    return c.json({ success: true, data: rows.results || [] });
+  } catch (e) {
+    console.error('[admin/exchange] 列表失败:', e);
+    return c.json({ success: false, error: '兑换列表加载失败' }, 500);
+  }
+});
+
+// 新建兑换项
+admin.post('/exchange', async (c) => {
+  try {
+    const b = await c.req.json();
+    if (!b.name || !b.item_type || !Number.isFinite(parseInt(b.price)) || parseInt(b.price) < 1) {
+      return c.json({ success: false, error: '名称、道具类型、价格为必填' }, 400);
+    }
+    const r = await c.env.DB.prepare(`
+      INSERT INTO exchange_offers (name, description, item_type, duration_days, price, stock, per_user_limit, ends_at, is_active)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).bind(
+      String(b.name), String(b.description || ''), String(b.item_type),
+      b.duration_days ? parseInt(b.duration_days) : null,
+      parseInt(b.price), b.stock === undefined || b.stock === '' || b.stock === -1 ? -1 : parseInt(b.stock),
+      b.per_user_limit ? parseInt(b.per_user_limit) : 0,
+      b.ends_at || null, b.is_active === 0 ? 0 : 1,
+    ).run();
+    return c.json({ success: r.meta.changes > 0, message: '兑换项已创建' });
+  } catch (e) {
+    console.error('[admin/exchange] 创建失败:', e);
+    return c.json({ success: false, error: '创建失败' }, 500);
+  }
+});
+
+// 更新兑换项（部分字段可改）
+admin.put('/exchange/:id', async (c) => {
+  try {
+    const id = parseInt(c.req.param('id'));
+    const b = await c.req.json();
+    const fields: string[] = [];
+    const binds: unknown[] = [];
+    for (const [k, v] of Object.entries(b)) {
+      if (k === 'name' || k === 'description') { fields.push(`${k} = ?`); binds.push(String(v)); }
+      else if (k === 'price') { fields.push('price = ?'); binds.push(parseInt(String(v)) || 1); }
+      else if (k === 'duration_days') { fields.push('duration_days = ?'); binds.push(v ? parseInt(String(v)) : null); }
+      else if (k === 'stock') { fields.push('stock = ?'); binds.push(v === '' || v === undefined ? -1 : parseInt(String(v))); }
+      else if (k === 'per_user_limit') { fields.push('per_user_limit = ?'); binds.push(parseInt(String(v)) || 0); }
+      else if (k === 'ends_at') { fields.push('ends_at = ?'); binds.push(v || null); }
+      else if (k === 'is_active') { fields.push('is_active = ?'); binds.push(v ? 1 : 0); }
+    }
+    if (fields.length === 0) return c.json({ success: false, error: '没有要更新的字段' }, 400);
+    binds.push(id);
+    await c.env.DB.prepare(`UPDATE exchange_offers SET ${fields.join(', ')} WHERE id = ?`).bind(...binds).run();
+    return c.json({ success: true, message: '已保存' });
+  } catch (e) {
+    console.error('[admin/exchange] 更新失败:', e);
+    return c.json({ success: false, error: '更新失败' }, 500);
+  }
+});
+
+// 删除兑换项（用户已兑到的道具不受影响——它们是独立行）
+admin.delete('/exchange/:id', async (c) => {
+  const id = parseInt(c.req.param('id'));
+  if (!id) return c.json({ success: false, error: '无效的ID' }, 400);
+  await c.env.DB.prepare('DELETE FROM exchange_offers WHERE id = ?').bind(id).run();
+  return c.json({ success: true, message: '已删除' });
+});
+
 // 多人复核投票（仿帖子巡查）：confirm 达到 review_violation_limit 人确认违规 → 删除；
 // pass 达到 review_pass_limit 人 → 驳回；管理员一票否决/一票通过
 admin.post('/reports/:id/review', async (c) => {

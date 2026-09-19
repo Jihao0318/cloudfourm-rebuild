@@ -140,9 +140,14 @@ export default function Shop() {
           <span className="text-sm text-gray-500 dark:text-gray-400">当前积分</span>
           <span className="text-2xl font-bold text-amber-700 dark:text-amber-300 ml-2">{balance} 🪙</span>
         </div>
-        <button onClick={() => navigate('/warehouse')} className="text-sm text-primary-500 hover:underline">
-          我的仓库 →
-        </button>
+        <div className="flex items-center gap-3">
+          <button onClick={() => navigate('/exchange')} className="text-sm text-primary-500 hover:underline">
+            ⏳ 限时兑换
+          </button>
+          <button onClick={() => navigate('/warehouse')} className="text-sm text-primary-500 hover:underline">
+            我的仓库 →
+          </button>
+        </div>
       </div>
 
       <h1 className="text-2xl font-bold mb-1">积分商城</h1>

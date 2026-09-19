@@ -771,6 +771,12 @@ export const lotteryCoins = {
   draw10: () => request<LotteryDrawResult>('/lottery-coins/draw10', { method: 'POST' }),
 };
 
+// 限时兑换商店
+export const exchange = {
+  offers: () => request<any[]>('/exchange/offers'),
+  buy: (id: number) => request<{ message: string }>(`/exchange/buy/${id}`, { method: 'POST' }),
+};
+
 export const leaderboardApi = {
   coins: (page?: number) => request<any[]>(`/leaderboard/coins?page=${page || 1}`),
 };
@@ -782,6 +788,14 @@ export const unban = {
 
 ;// 给 admin 对象追加解封审核方法
 // 在 admin 命名空间里追加
+;(admin as any).exchangeList = () => request<any[]>('/admin/exchange');
+;(admin as any).exchangeCreate = (data: Record<string, unknown>) =>
+  request<{ message: string }>('/admin/exchange', { method: 'POST', body: JSON.stringify(data) });
+;(admin as any).exchangeUpdate = (id: number, data: Record<string, unknown>) =>
+  request<{ message: string }>(`/admin/exchange/${id}`, { method: 'PUT', body: JSON.stringify(data) });
+;(admin as any).exchangeDelete = (id: number) =>
+  request<{ message: string }>(`/admin/exchange/${id}`, { method: 'DELETE' });
+
 ;(admin as any).lottery = () =>
   request<any>('/admin/lottery');
 ;(admin as any).updateLotteryConfig = (config: Record<string, number>) =>
