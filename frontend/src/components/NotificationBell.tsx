@@ -42,6 +42,10 @@ function notificationMeta(n: { type: string; content?: string | null }): { icon:
   return TYPE_META[n.type] || TYPE_META.system;
 }
 
+// 点赞/评论是最高频的两类通知：列表层折叠成两类，展开后再看单条（2026-09-19 用户需求）
+const isLikeType = (t: string) => t === 'like_post' || t === 'like_comment';
+const isReplyType = (t: string) => t === 'reply';
+
 export default function NotificationBell({ userId }: NotificationBellProps) {
   const navigate = useNavigate();
   const [open, setOpen] = useState(false);
@@ -52,8 +56,10 @@ export default function NotificationBell({ userId }: NotificationBellProps) {
     } catch { return []; }
   });
   const [badge, setBadge] = useState(0);
-  // 展开的通知 id（点击后显示完整内容；帖子下架/删除时通知全文仍可读）
+  // 展开的通知 id（点击后显示完整内容 + 跳转链接；帖子下架/删除时通知全文仍可读）
   const [expandedId, setExpandedId] = useState<number | null>(null);
+  // 折叠分组的展开状态：key = `${dateLabel}:${kind}`（kind = like / reply）
+  const [expandedGroups, setExpandedGroups] = useState<Record<string, boolean>>({});
   const panelRef = useRef<HTMLDivElement>(null);
   const btnRef = useRef<HTMLButtonElement>(null);
 
@@ -111,14 +117,16 @@ export default function NotificationBell({ userId }: NotificationBellProps) {
   const handleToggle = () => setOpen(prev => !prev);
   const handleClose = () => setOpen(false);
 
-  // 点击单条 → 展开/收起完整内容（帖子可能已下架/删除，展开保证通知全文可见）+ 标记已读
+  // 点击单条 → 展开/收起完整内容（展开后显示「查看帖子」跳转）+ 标记已读
   const handleClick = (n: CachedNotification) => {
     setExpandedId(prev => prev === n.id ? null : n.id);
-    notificationsApi.markRead(n.id).then(() => {
-      const updated = listRef.current.map(item => item.id === n.id ? { ...item, read: 1 as const } : item);
-      setList(updated);
-      save(updated);
-    }).catch(() => {});
+    if (!n.read) {
+      notificationsApi.markRead(n.id).then(() => {
+        const updated = listRef.current.map(item => item.id === n.id ? { ...item, read: 1 as const } : item);
+        setList(updated);
+        save(updated);
+      }).catch(() => {});
+    }
   };
 
   // 全部已读 → 服务端确认后置本地全部已读
@@ -164,6 +172,12 @@ export default function NotificationBell({ userId }: NotificationBellProps) {
     }
   }, [open]);
 
+  // 通知 → 帖子跳转目标（带评论锚点；PostDetail 支持 ?comment=ID 定位高亮）
+  const postLinkOf = (n: CachedNotification): string | null => {
+    if (!n.post_id) return null;
+    return n.comment_id ? `/post/${n.post_id}?comment=${n.comment_id}` : `/post/${n.post_id}`;
+  };
+
   const renderText = (n: CachedNotification) => {
     const actor = n.actor_name || '系统';
     switch (n.type) {
@@ -174,23 +188,143 @@ export default function NotificationBell({ userId }: NotificationBellProps) {
     }
   };
 
-  // 副文本：评论内容预览 / 类型说明，填充行内空白（下架/打回类通知无副文本——展开区只显示原文+对应入口）
+  // 副文本：评论内容预览（点赞类不放填充文案——展开后有「查看帖子」跳转）
   const renderSub = (n: CachedNotification) => {
-    if (n.type === 'post_takedown' || n.type === 'post_rejected') return '';
     if (n.type === 'reply' && n.content) return `评论：${n.content}`;
-    if (n.type === 'like_post' || n.type === 'like_comment') return n.content || '点击查看相关帖子';
-    if (n.post_id) return '点击查看相关帖子';
+    if ((n.type === 'like_post' || n.type === 'like_comment') && n.content) return n.content;
+    if (n.type === 'system' && !n.content) return '';
     return '';
   };
 
-  // 按日期分组（本地时区）：今天 / 更早
-  const grouped: { label: string; items: CachedNotification[] }[] = [];
+  // 单条通知行（普通类型直接渲染；折叠组展开后也用它渲染单条）
+  const renderRow = (n: CachedNotification) => {
+    const meta = notificationMeta(n);
+    const sub = renderSub(n);
+    const expanded = expandedId === n.id;
+    const link = postLinkOf(n);
+    return (
+      <div key={n.id}
+        className={`group relative flex items-start gap-3 px-4 py-3 border-b dark:border-[#333] transition cursor-pointer ${
+          !n.read ? 'bg-primary-50/40 dark:bg-primary-950/20 hover:bg-primary-50/70' : 'hover:bg-gray-50 dark:hover:bg-gray-800/30'
+        }`}
+        onClick={() => handleClick(n)}
+      >
+        {/* 未读左侧竖条 */}
+        {!n.read && <span className="absolute left-0 top-2.5 bottom-2.5 w-[3px] rounded-r bg-primary-500" />}
+
+        {/* 类型图标 */}
+        <div className={`w-10 h-10 rounded-full ${meta.cls} flex items-center justify-center text-lg shrink-0`}>
+          {meta.icon}
+        </div>
+
+        {/* 主文本 + 时间（同行）+ 副文本（展开时显示完整内容） */}
+        <div className="flex-1 min-w-0">
+          <div className="flex items-baseline justify-between gap-2">
+            <span className={`text-sm leading-snug ${expanded ? '' : 'truncate'} ${!n.read ? 'font-medium text-gray-900 dark:text-gray-100' : 'text-gray-600 dark:text-gray-400'}`}>
+              {renderText(n)}
+            </span>
+            <span className="text-[11px] text-gray-400 shrink-0">{formatRelativeTime(n.created_at)}</span>
+          </div>
+          {sub && (
+            <div className={`text-xs text-gray-500 dark:text-gray-400 mt-1 ${expanded ? 'whitespace-pre-wrap break-words leading-relaxed' : 'line-clamp-1'}`}>{sub}</div>
+          )}
+          {expanded && (
+            <div className="mt-2 space-y-1.5">
+              {/* 通用跳转：评论/点赞/系统类带帖子引用的通知 → 查看原帖（评论锚点高亮） */}
+              {link && (n.type === 'reply' || isLikeType(n.type) || n.type === 'system') && (
+                <button
+                  onClick={(e) => { e.stopPropagation(); setOpen(false); navigate(link); }}
+                  className="text-xs font-medium text-primary-600 dark:text-primary-400 hover:underline">
+                  📄 查看帖子 →
+                </button>
+              )}
+              {/* 下架类通知：原文下方提供申诉入口（其他类型只有完整原文，不显示申诉） */}
+              {n.type === 'post_takedown' && n.post_id && (
+                <>
+                  <p className="text-xs text-gray-500 dark:text-gray-400">如有异议，请点击下方申诉</p>
+                  <button
+                    onClick={(e) => { e.stopPropagation(); setOpen(false); navigate(`/appeal/${n.post_id}`); }}
+                    className="text-xs font-medium text-blue-600 dark:text-blue-400 hover:underline">
+                    📄 申诉 →
+                  </button>
+                </>
+              )}
+              {/* 责令更换邮箱：登录态下前往专门的更换邮箱页（改邮箱成功即自动解除责令） */}
+              {n.type === 'email_change_ordered' && (
+                <>
+                  <p className="text-xs text-gray-500 dark:text-gray-400">请前往更换邮箱页将邮箱更换为新邮箱，完成后责令自动解除</p>
+                  <button
+                    onClick={(e) => { e.stopPropagation(); setOpen(false); navigate('/change-email'); }}
+                    className="text-xs font-medium text-orange-600 dark:text-orange-400 hover:underline">
+                    📧 去更换邮箱 →
+                  </button>
+                </>
+              )}
+              {/* 打回类通知：原文下方提供「去修改」入口（作者编辑后重新提交，进入待巡查） */}
+              {n.type === 'post_rejected' && n.post_id && (
+                <>
+                  <p className="text-xs text-gray-500 dark:text-gray-400">请修改后重新提交（1 天内未修改将被删除）</p>
+                  <button
+                    onClick={(e) => { e.stopPropagation(); setOpen(false); navigate(`/post/${n.post_id}/edit`); }}
+                    className="text-xs font-medium text-amber-600 dark:text-amber-400 hover:underline">
+                    ✏️ 去修改 →
+                  </button>
+                </>
+              )}
+              <p className="text-[11px] text-gray-400">点击收起</p>
+            </div>
+          )}
+        </div>
+
+        {/* 未读红点 */}
+        {!n.read && <span className="w-2 h-2 bg-red-500 rounded-full shrink-0 mt-2" />}
+
+        {/* 删除：桌面 hover 显示，移动端淡显 */}
+        <button
+          onClick={(e) => { e.stopPropagation(); const updated = list.filter(item => item.id !== n.id); setList(updated); save(updated); }}
+          className="shrink-0 self-center p-1.5 rounded-full text-gray-300 hover:text-red-500 hover:bg-red-50 transition opacity-0 group-hover:opacity-100 max-md:opacity-50"
+          title="删除">
+          <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+        </button>
+      </div>
+    );
+  };
+
+  // 折叠组标题行（点赞 / 评论两类）：显示总数 + 未读数，点击展开单条列表
+  const renderGroupHeader = (key: string, icon: string, cls: string, label: string, items: CachedNotification[]) => {
+    const isOpen = !!expandedGroups[key];
+    const unread = items.filter(n => !n.read).length;
+    return (
+      <div key={key}
+        className="group relative flex items-center gap-3 px-4 py-3 border-b dark:border-[#333] transition cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-800/30"
+        onClick={() => setExpandedGroups(prev => ({ ...prev, [key]: !prev[key] }))}
+      >
+        <div className={`w-10 h-10 rounded-full ${cls} flex items-center justify-center text-lg shrink-0`}>{icon}</div>
+        <div className="flex-1 min-w-0">
+          <span className="text-sm font-medium text-gray-900 dark:text-gray-100">{label}</span>
+          {unread > 0 && (
+            <span className="text-[11px] bg-red-500 text-white rounded-full px-1.5 py-0.5 font-medium ml-2">{unread} 未读</span>
+          )}
+        </div>
+        <span className="text-xs text-gray-400 shrink-0">{items.length} 条</span>
+        <svg className={`w-4 h-4 text-gray-400 shrink-0 transition-transform ${isOpen ? 'rotate-90' : ''}`} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+          <polyline points="9 18 15 12 9 6" />
+        </svg>
+      </div>
+    );
+  };
+
+  // 按日期分组（本地时区）：今天 / 更早；组内把点赞/评论折叠成两类，其余单条展示
+  const sections: { label: string; likes: CachedNotification[]; replies: CachedNotification[]; others: CachedNotification[] }[] = [];
   for (const n of list) {
     const d = new Date(n.created_at.replace(' ', 'T') + 'Z');
     const startToday = new Date(); startToday.setHours(0, 0, 0, 0);
     const label = d >= startToday ? '今天' : '更早';
-    const g = grouped.find(x => x.label === label);
-    if (g) g.items.push(n); else grouped.push({ label, items: [n] });
+    let s = sections.find(x => x.label === label);
+    if (!s) { s = { label, likes: [], replies: [], others: [] }; sections.push(s); }
+    if (isLikeType(n.type)) s.likes.push(n);
+    else if (isReplyType(n.type)) s.replies.push(n);
+    else s.others.push(n);
   }
 
   return (
@@ -250,7 +384,7 @@ export default function NotificationBell({ userId }: NotificationBellProps) {
               </div>
             </div>
 
-            {/* 列表（分组）——显式不透明背景，即使 flex 继承异常也保证覆盖遮罩 */}
+            {/* 列表（日期 → 点赞/评论折叠组 → 其他单条）——显式不透明背景，即使 flex 继承异常也保证覆盖遮罩 */}
             <div className="flex-1 overflow-y-auto bg-white dark:bg-[#111]">
               {list.length === 0 ? (
                 /* 空态：占满面板，不再塌陷 */
@@ -260,93 +394,23 @@ export default function NotificationBell({ userId }: NotificationBellProps) {
                   <p className="text-xs text-gray-400 mt-1.5 leading-relaxed">收到点赞、评论、回复时，<br />会在这里第一时间提醒你</p>
                 </div>
               ) : (
-                grouped.map(g => (
-                  <div key={g.label}>
+                sections.map(s => (
+                  <div key={s.label}>
                     {/* 分组标题 */}
-                    <div className="px-4 pt-3 pb-1.5 text-[11px] font-semibold text-gray-400 dark:text-gray-500">{g.label}</div>
-                    {g.items.map(n => {
-                      const meta = notificationMeta(n);
-                      const sub = renderSub(n);
-                      const expanded = expandedId === n.id;
-                      return (
-                        <div key={n.id}
-                          className={`group relative flex items-start gap-3 px-4 py-3 border-b dark:border-[#333] transition cursor-pointer ${
-                            !n.read ? 'bg-primary-50/40 dark:bg-primary-950/20 hover:bg-primary-50/70' : 'hover:bg-gray-50 dark:hover:bg-gray-800/30'
-                          }`}
-                          onClick={() => handleClick(n)}
-                        >
-                          {/* 未读左侧竖条 */}
-                          {!n.read && <span className="absolute left-0 top-2.5 bottom-2.5 w-[3px] rounded-r bg-primary-500" />}
-
-                          {/* 类型图标 */}
-                          <div className={`w-10 h-10 rounded-full ${meta.cls} flex items-center justify-center text-lg shrink-0`}>
-                            {meta.icon}
-                          </div>
-
-                          {/* 主文本 + 时间（同行）+ 副文本（展开时显示完整内容） */}
-                          <div className="flex-1 min-w-0">
-                            <div className="flex items-baseline justify-between gap-2">
-                              <span className={`text-sm leading-snug ${expanded ? '' : 'truncate'} ${!n.read ? 'font-medium text-gray-900 dark:text-gray-100' : 'text-gray-600 dark:text-gray-400'}`}>
-                                {renderText(n)}
-                              </span>
-                              <span className="text-[11px] text-gray-400 shrink-0">{formatRelativeTime(n.created_at)}</span>
-                            </div>
-                            {sub && (
-                              <div className={`text-xs text-gray-500 dark:text-gray-400 mt-1 ${expanded ? 'whitespace-pre-wrap break-words leading-relaxed' : 'line-clamp-1'}`}>{sub}</div>
-                            )}
-                            {expanded && (
-                              <div className="mt-2 space-y-1.5">
-                                {/* 下架类通知：原文下方提供申诉入口（其他类型只有完整原文，不显示申诉） */}
-                                {n.type === 'post_takedown' && n.post_id && (
-                                  <>
-                                    <p className="text-xs text-gray-500 dark:text-gray-400">如有异议，请点击下方申诉</p>
-                                    <button
-                                      onClick={(e) => { e.stopPropagation(); setOpen(false); navigate(`/appeal/${n.post_id}`); }}
-                                      className="text-xs font-medium text-blue-600 dark:text-blue-400 hover:underline">
-                                      📄 申诉 →
-                                    </button>
-                                  </>
-                                )}
-                                {/* 责令更换邮箱：登录态下前往专门的更换邮箱页（改邮箱成功即自动解除责令） */}
-                                {n.type === 'email_change_ordered' && (
-                                  <>
-                                    <p className="text-xs text-gray-500 dark:text-gray-400">请前往更换邮箱页将邮箱更换为新邮箱，完成后责令自动解除</p>
-                                    <button
-                                      onClick={(e) => { e.stopPropagation(); setOpen(false); navigate('/change-email'); }}
-                                      className="text-xs font-medium text-orange-600 dark:text-orange-400 hover:underline">
-                                      📧 去更换邮箱 →
-                                    </button>
-                                  </>
-                                )}
-                                {/* 打回类通知：原文下方提供「去修改」入口（作者编辑后重新提交，进入待巡查） */}
-                                {n.type === 'post_rejected' && n.post_id && (
-                                  <>
-                                    <p className="text-xs text-gray-500 dark:text-gray-400">请修改后重新提交（1 天内未修改将被删除）</p>
-                                    <button
-                                      onClick={(e) => { e.stopPropagation(); setOpen(false); navigate(`/post/${n.post_id}/edit`); }}
-                                      className="text-xs font-medium text-amber-600 dark:text-amber-400 hover:underline">
-                                      ✏️ 去修改 →
-                                    </button>
-                                  </>
-                                )}
-                                <p className="text-[11px] text-gray-400">点击收起</p>
-                              </div>
-                            )}
-                          </div>
-
-                          {/* 未读红点 */}
-                          {!n.read && <span className="w-2 h-2 bg-red-500 rounded-full shrink-0 mt-2" />}
-
-                          {/* 删除：桌面 hover 显示，移动端淡显 */}
-                          <button
-                            onClick={(e) => { e.stopPropagation(); const updated = list.filter(item => item.id !== n.id); setList(updated); save(updated); }}
-                            className="shrink-0 self-center p-1.5 rounded-full text-gray-300 hover:text-red-500 hover:bg-red-50 transition opacity-0 group-hover:opacity-100 max-md:opacity-50"
-                            title="删除">
-                            <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
-                          </button>
-                        </div>
-                      );
-                    })}
+                    <div className="px-4 pt-3 pb-1.5 text-[11px] font-semibold text-gray-400 dark:text-gray-500">{s.label}</div>
+                    {s.likes.length > 0 && (
+                      <>
+                        {renderGroupHeader(`${s.label}:like`, '❤️', TYPE_META.like_post.cls, '收到的赞', s.likes)}
+                        {expandedGroups[`${s.label}:like`] && s.likes.map(renderRow)}
+                      </>
+                    )}
+                    {s.replies.length > 0 && (
+                      <>
+                        {renderGroupHeader(`${s.label}:reply`, '💬', TYPE_META.reply.cls, '收到的评论', s.replies)}
+                        {expandedGroups[`${s.label}:reply`] && s.replies.map(renderRow)}
+                      </>
+                    )}
+                    {s.others.map(renderRow)}
                   </div>
                 ))
               )}

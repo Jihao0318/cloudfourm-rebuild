@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { createPortal } from 'react-dom';
-import { useParams, useNavigate, Link } from 'react-router-dom';
+import { useParams, useNavigate, useLocation, Link } from 'react-router-dom';
 
 import { useAuth } from '../contexts/AuthContext';
 import { formatRelativeTime, formatDateTime, parseDate } from '../utils/date';
@@ -80,7 +80,7 @@ export default function PostDetail() {
   const [postThanked, setPostThanked] = useState(false);
   const [thankedComments, setThankedComments] = useState<Set<number>>(new Set());
 
-  useEffect(() => { if (isValidId) loadPost(); }, [id]);
+  useEffect(() => { if (isValidId) { anchorFoundRef.current = false; loadPost(); } }, [id]);
 
   // ponytail: 点击回复后自动聚焦输入框并滚动到可视区域
   useEffect(() => {
@@ -89,6 +89,34 @@ export default function PostDetail() {
       commentInputRef.current.scrollIntoView({ behavior: 'smooth', block: 'center' });
     }
   }, [replyTo]);
+
+  // 评论锚点：通知「查看帖子」跳转带 ?comment=ID → 滚动到该评论并高亮
+  // 目标评论可能在后续分页里：每页加载完都没找到就继续拉下一页，直到找到或拉完
+  const location = useLocation();
+  const anchorCommentId = (() => {
+    const v = new URLSearchParams(location.search).get('comment');
+    return v ? parseInt(v) : null;
+  })();
+  const anchorFoundRef = useRef(false);
+  useEffect(() => {
+    if (!anchorCommentId || commentList.length === 0 || anchorFoundRef.current) return;
+    // 展开全部顶层评论，保证深层回复也渲染在 DOM 里
+    setExpandedReplies(prev => {
+      const all = { ...prev };
+      for (const c of commentList) all[c.id] = true;
+      return all;
+    });
+    const t = setTimeout(() => {
+      const el = document.getElementById(`comment-${anchorCommentId}`);
+      if (el) {
+        anchorFoundRef.current = true;
+        el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      } else if (commentList.length < commentTotal) {
+        loadComments(commentPage + 1, true);
+      }
+    }, 350);
+    return () => clearTimeout(t);
+  }, [anchorCommentId, commentList.length, commentTotal, commentPage]);
 
   const loadComments = async (page: number, append: boolean = false) => {
     if (append) setCommentLoadingMore(true);
@@ -364,6 +392,7 @@ export default function PostDetail() {
   // 递归渲染评论树（depth=0 顶层，depth=1+ 缩进，depth≥2 为上限）
   const renderCommentTree = (comment: Comment, depth: number = 0): JSX.Element => {
     const isHighlighted = !!user && replyTo?.id === comment.id;
+    const isAnchor = anchorCommentId === comment.id;
     const replyTargetName = depth > 0 ? getReplyTargetName(comment) : null;
     const children = comment.children || [];
 
@@ -378,8 +407,8 @@ export default function PostDetail() {
     const vipClass = getVipCommentClass(comment.author?.vip_tier);
 
     return (
-      <div key={comment.id} className={`py-3 first:pt-0 last:pb-0 transition ${
-        isHighlighted ? 'bg-blue-50/50 -mx-4 px-4 rounded-lg' : ''
+      <div key={comment.id} id={`comment-${comment.id}`} className={`py-3 first:pt-0 last:pb-0 transition ${
+        isHighlighted || isAnchor ? 'bg-blue-50/50 -mx-4 px-4 rounded-lg' : ''
       } ${indentClass} ${vipClass}`}>
         <div className="flex items-start gap-2.5">
           <Link to={`/user/${comment.user_id}`} className="flex-shrink-0 mt-0.5">
