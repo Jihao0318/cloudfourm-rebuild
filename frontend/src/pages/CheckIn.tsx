@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, Link } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import { useToast } from '../contexts/ToastContext';
 import { checkIn as checkInApi } from '../services/api';
@@ -128,6 +128,17 @@ export default function CheckIn() {
           </>
         )}
       </div>
+
+      {/* 每日任务入口：签到之外赚积分的主路径 */}
+      <Link to="/tasks"
+        className="flex items-center gap-3 bg-white rounded-2xl border p-4 hover:border-primary-300 hover:shadow-sm transition group">
+        <div className="w-10 h-10 rounded-full bg-amber-50 flex items-center justify-center text-lg shrink-0">⚡</div>
+        <div className="flex-1 min-w-0">
+          <div className="text-sm font-medium text-gray-900">每日任务</div>
+          <div className="text-xs text-gray-400">做任务赚积分，和签到叠加的每日收入</div>
+        </div>
+        <span className="text-xs text-primary-500 shrink-0 group-hover:translate-x-0.5 transition">前往 →</span>
+      </Link>
 
       <div className="grid grid-cols-3 gap-4">
         <div className="bg-white rounded-xl border p-4 text-center">

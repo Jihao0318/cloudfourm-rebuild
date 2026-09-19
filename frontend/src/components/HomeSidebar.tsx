@@ -4,7 +4,7 @@ import { useAuth } from '../contexts/AuthContext';
 import { site, coins as coinsApi, posts as postsApi, leaderboardApi } from '../services/api';
 import Avatar from './Avatar';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
-import { faUser, faCoins, faBolt, faTrophy, faSignInAlt, faUserPlus, faMagic, faGift, faNewspaper } from '@fortawesome/free-solid-svg-icons';
+import { faUser, faCoins, faBolt, faTrophy, faSignInAlt, faUserPlus, faMagic, faGift, faNewspaper, faDice } from '@fortawesome/free-solid-svg-icons';
 
 interface RankUser {
   id: number;
@@ -108,7 +108,7 @@ export default function HomeSidebar() {
               {[
                 { to: '/tasks', icon: faBolt, label: '任务' },
                 { to: '/warehouse', icon: faCoins, label: '仓库' },
-                { to: '/red-packets', icon: faGift, label: '红包' },
+                { to: '/lottery', icon: faDice, label: '抽奖' },
                 { to: '/active-effects', icon: faMagic, label: '活跃效果' },
               ].map(l => (
                 <Link key={l.to} to={l.to}
