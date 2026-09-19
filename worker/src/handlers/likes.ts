@@ -54,11 +54,17 @@ likes.post('/', requireAuth, async (c) => {
   await createLike(c.env.DB, user.userId, target_id, target_type);
 
   // 作者一次查询，通知与奖励共用，避免重复 D1 往返（软删内容不再触发点赞通知/奖励）
+  // 评论赞需带出 post_id 与评论内容：通知要能跳回帖子并展示被赞评论片段
   const author = target_type === 'post'
     ? await c.env.DB.prepare('SELECT user_id FROM posts WHERE id = ? AND deleted_at IS NULL').bind(target_id).first<{ user_id: number }>()
-    : await c.env.DB.prepare('SELECT user_id FROM comments WHERE id = ? AND deleted_at IS NULL').bind(target_id).first<{ user_id: number }>();
+    : await c.env.DB.prepare('SELECT user_id, post_id, content FROM comments WHERE id = ? AND deleted_at IS NULL').bind(target_id).first<{ user_id: number; post_id: number; content: string }>();
   if (author) {
-    createNotification(c.env.DB, author.user_id, user.userId, target_type === 'post' ? 'like_post' : 'like_comment', target_type === 'post' ? target_id : undefined);
+    if (target_type === 'post') {
+      createNotification(c.env.DB, author.user_id, user.userId, 'like_post', target_id);
+    } else {
+      const cm = author as { user_id: number; post_id: number; content: string };
+      createNotification(c.env.DB, author.user_id, user.userId, 'like_comment', cm.post_id, target_id, (cm.content || '').slice(0, 80));
+    }
   }
 
   // 给内容作者加积分/经验/任务/成就（仅新增赞；异步非阻塞，失败不影响点赞主流程）

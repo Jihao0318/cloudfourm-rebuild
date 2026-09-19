@@ -666,6 +666,10 @@ export interface NotificationItem {
   created_at: string;
   actor_name?: string;
   actor_avatar?: string;
+  // 读取时 JOIN 带出的上下文（点赞/评论类通知展示帖子标题与内容片段）
+  post_title?: string | null;
+  post_excerpt?: string | null;
+  comment_content?: string | null;
 }
 // messages removed
 

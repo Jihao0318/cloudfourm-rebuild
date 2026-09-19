@@ -188,12 +188,17 @@ export default function NotificationBell({ userId }: NotificationBellProps) {
     }
   };
 
-  // 副文本：评论内容预览（点赞类不放填充文案——展开后有「查看帖子」跳转）
+  // 副文本：点赞/评论类显示「帖子标题 + 内容片段」（后端读取时 JOIN 带出，旧通知回落到已存内容）
   const renderSub = (n: CachedNotification) => {
-    if (n.type === 'reply' && n.content) return `评论：${n.content}`;
-    if ((n.type === 'like_post' || n.type === 'like_comment') && n.content) return n.content;
+    if (isLikeType(n.type) || isReplyType(n.type)) {
+      const title = n.post_title ? `《${n.post_title}》` : '';
+      if (n.type === 'like_post') return [title, n.post_excerpt].filter(Boolean).join(' ');
+      const excerpt = n.comment_content || n.content || '';
+      const label = isReplyType(n.type) ? '评论：' : '';
+      return [title, excerpt ? `${label}${excerpt}` : ''].filter(Boolean).join(' ');
+    }
     if (n.type === 'system' && !n.content) return '';
-    return '';
+    return n.content || '';
   };
 
   // 单条通知行（普通类型直接渲染；折叠组展开后也用它渲染单条）

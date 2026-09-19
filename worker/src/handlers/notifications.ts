@@ -13,9 +13,17 @@ notifications.get('/', requireAuth, async (c) => {
 
   const [list, countResult, unreadResult] = await Promise.all([
     c.env.DB.prepare(`
-      SELECT n.*, u.username as actor_name, u.avatar_url as actor_avatar
+      SELECT n.id, n.user_id, n.actor_id, n.type,
+             COALESCE(n.post_id, cm.post_id) AS post_id,
+             n.comment_id, n.content, n.read, n.created_at,
+             u.username as actor_name, u.avatar_url as actor_avatar,
+             p.title AS post_title,
+             substr(p.content, 1, 100) AS post_excerpt,
+             substr(cm.content, 1, 100) AS comment_content
       FROM notifications n
       LEFT JOIN users u ON n.actor_id = u.id
+      LEFT JOIN comments cm ON n.comment_id = cm.id
+      LEFT JOIN posts p ON COALESCE(n.post_id, cm.post_id) = p.id
       WHERE n.user_id = ?
       ORDER BY n.created_at DESC
       LIMIT ? OFFSET ?
