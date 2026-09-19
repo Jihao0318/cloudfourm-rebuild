@@ -188,14 +188,15 @@ export default function NotificationBell({ userId }: NotificationBellProps) {
     }
   };
 
-  // 副文本：点赞/评论类显示「帖子标题 + 内容片段」（后端读取时 JOIN 带出，旧通知回落到已存内容）
+  // 副文本（2026-09-19 用户规则）：
+  //   赞帖子 → 只显示所在帖子标题；赞评论 / 评论 → 帖子标题 + 评论内容片段
+  //   （标题与评论内容为后端读取时 JOIN 带出；旧本地缓存通知回落到已存内容）
   const renderSub = (n: CachedNotification) => {
+    if (n.type === 'like_post') return n.post_title ? `《${n.post_title}》` : '';
     if (isLikeType(n.type) || isReplyType(n.type)) {
       const title = n.post_title ? `《${n.post_title}》` : '';
-      if (n.type === 'like_post') return [title, n.post_excerpt].filter(Boolean).join(' ');
-      const excerpt = n.comment_content || n.content || '';
-      const label = isReplyType(n.type) ? '评论：' : '';
-      return [title, excerpt ? `${label}${excerpt}` : ''].filter(Boolean).join(' ');
+      const excerpt = n.comment_content || (isReplyType(n.type) ? n.content : '') || '';
+      return [title, excerpt].filter(Boolean).join(' ');
     }
     if (n.type === 'system' && !n.content) return '';
     return n.content || '';
