@@ -152,7 +152,7 @@ export interface AchievementDef {
 export const ACHIEVEMENTS: Record<string, AchievementDef> = {
   // ── 原有 6 个：保留原积分奖励，补 rarity ──
   first_post: { name: '初来乍到', desc: '发布第一个帖子', rarity: 'bronze', rewards: [{ type: 'coins', amount: 50 }] },
-  likes_100: { name: '人气王', desc: '被点赞累计 100 次', rarity: 'silver', rewards: [{ type: 'coins', amount: 200 }, { type: 'title_badge', days: 7 }] },
+  likes_100: { name: '人气王', desc: '被点赞累计 100 次', rarity: 'silver', rewards: [{ type: 'coins', amount: 200 }, { type: 'title_badge', days: 14 }] },
   posts_100: { name: '笔耕不辍', desc: '发布帖子累计 100 篇', rarity: 'gold', rewards: [{ type: 'coins', amount: 300 }, { type: 'title_badge', days: 7 }] },
   checkin_30: { name: '全勤王', desc: '连续签到 30 天', rarity: 'silver', rewards: [{ type: 'coins', amount: 300 }, { type: 'title_badge', days: 30 }] },
   thanks_50: { name: '热心肠', desc: '被感谢累计 50 次', rarity: 'silver', rewards: [{ type: 'coins', amount: 200 }] },
@@ -167,7 +167,7 @@ export const ACHIEVEMENTS: Record<string, AchievementDef> = {
   follows_10: { name: '人气新星', desc: '被 10 位同学关注', rarity: 'silver', rewards: [{ type: 'coins', amount: 150 }] },
   invite_1: { name: '校园大使', desc: '成功邀请 1 位同学注册', rarity: 'bronze', rewards: [{ type: 'coins', amount: 100 }] },
   invite_5: { name: '金牌大使', desc: '成功邀请 5 位同学注册', rarity: 'gold', rewards: [{ type: 'title_badge', days: 30 }] },
-  wealth_2000: { name: '小富翁', desc: '累计赚取 2000 积分', rarity: 'gold', rewards: [{ type: 'title_badge', days: 30 }] },
+  wealth_2000: { name: '小富翁', desc: '累计赚取 2000 积分', rarity: 'gold', rewards: [{ type: 'title_badge', days: 7 }] },
   level_10: { name: '小有名气', desc: '用户等级达到 Lv.10', rarity: 'silver', rewards: [{ type: 'coins', amount: 200 }] },
   level_20: { name: '校园传奇', desc: '用户等级达到 Lv.20', rarity: 'legend', rewards: [{ type: 'title_badge' }] },
   effect_first: { name: '才华初现', desc: '首次使用帖子效果道具', rarity: 'bronze', rewards: [{ type: 'coins', amount: 30 }] },

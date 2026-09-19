@@ -3,11 +3,11 @@ interface VIPBadgeProps {
   size?: 'sm' | 'md';
 }
 
-// 徽章配色：单色浅底 + 同系深字（与 Lv 等级徽章同风格，低调不抢眼）；档位间用灰→蓝→金区分
+// 徽章配色：三档统一浅蓝单色（S VIP 同款）——浅底深字、低调；金色留给称号徽章，避免撞车
 const TIER_CONFIG: Record<string, { label: string; cls: string }> = {
-  vip: { label: 'VIP', cls: 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300' },
+  vip: { label: 'VIP', cls: 'bg-sky-100 text-sky-700 dark:bg-sky-900/50 dark:text-sky-300' },
   's-vip': { label: 'S VIP', cls: 'bg-sky-100 text-sky-700 dark:bg-sky-900/50 dark:text-sky-300' },
-  'svip+': { label: 'S VIP+', cls: 'bg-amber-100 text-amber-700 dark:bg-amber-900/50 dark:text-amber-300' },
+  'svip+': { label: 'S VIP+', cls: 'bg-sky-100 text-sky-700 dark:bg-sky-900/50 dark:text-sky-300' },
 };
 
 // S VIP+ 昵称主题
