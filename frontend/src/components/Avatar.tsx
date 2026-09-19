@@ -85,11 +85,20 @@ export default function Avatar({ url, username, size = 'md', className = '', fra
     </div>
   );
 
-  // 图片型头像框：框图按 scale/offset 叠加在头像上层（不改变布局盒，超容部分可见）
+  // 图片型头像框：容器承载全部尺寸类（sizeClass + className——调用方传响应式尺寸类时
+  // 必须由容器承载，否则头像撑大而框仍按容器定位 → Profile 等页比例错位），头像层 w-full h-full
+  // 填满容器；框图按 scale/offset 叠加在头像上层（超容部分可见，装饰遮挡头像属设计效果）。
   if (frameValid && frameDef) {
     return (
-      <div className={`relative ${sizeClass} flex-shrink-0`}>
-        {img}
+      <div className={`relative ${sizeClass} ${className} flex-shrink-0`}>
+        {url ? (
+          <img src={url} alt={username || '头像'} loading="lazy"
+            className={`w-full h-full rounded-full object-cover ${frameClass}`} />
+        ) : (
+          <div className={`w-full h-full bg-primary-100 rounded-full flex items-center justify-center text-primary-600 font-bold ${frameClass}`}>
+            {username?.[0]?.toUpperCase() || '?'}
+          </div>
+        )}
         <img src={frameDef.image_url} alt="" aria-hidden
           className="absolute pointer-events-none max-w-none"
           style={{
