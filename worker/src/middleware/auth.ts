@@ -82,7 +82,7 @@ export async function requireAuth(c: Context<{ Bindings: Env }>, next: Next) {
 
   // 查出用户信息（排除敏感字段），后续 handler 可从 c.get('dbUser') 获取
   const dbUser = await c.env.DB
-    .prepare('SELECT id, username, email, avatar_url, bio, role, banned_until, scheduled_deleted_at, custom_title, nick_theme, title_badge, title_badge_expires_at, avatar_frame, avatar_frame_expires_at, created_at, deleted_at, email_verified, twofa_enabled, token_version FROM users WHERE id = ?')
+    .prepare('SELECT id, username, email, avatar_url, bio, role, banned_until, scheduled_deleted_at, custom_title, nick_theme, title_badge, title_badge_expires_at, avatar_frame, avatar_frame_expires_at, username_changed_at, created_at, deleted_at, email_verified, twofa_enabled, token_version FROM users WHERE id = ?')
     .bind(payload.userId)
     .first<User>();
 
