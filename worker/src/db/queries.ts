@@ -101,14 +101,36 @@ export async function getPublicUser(db: D1Database, userId: number): Promise<(Pu
   return { ...rest, exp: exp || 0, level: lv.level, tierName: lv.tierName };
 }
 
+// 物化计数读取：优先取 settings 键（每日 cron 校准），键缺失/非法时回落实时 COUNT（老库首次部署兼容）。
+// 消费方：排行榜 total、管理端统计页、后台用户列表——这些原本每次请求都全表扫描 users/comments。
+export async function materializedCount(db: D1Database, key: string, liveSql: string): Promise<number> {
+  const row = await db.prepare('SELECT value FROM settings WHERE key = ?').bind(key).first<{ value: string }>();
+  const n = row?.value ? parseInt(row.value) : NaN;
+  if (Number.isFinite(n) && n > 0) return n;
+  const live = await db.prepare(liveSql).first<{ count: number }>();
+  return live?.count || 0;
+}
+
+// 每日定时校准（cron 0 0 * * *，恰逢 D1 配额重置窗口）：各做一次全表 COUNT 写入 settings，
+// 换取读路径全天零扫描。users/comments/posts 总数的消费方见 materializedCount。
+export async function reconcileTotals(db: D1Database): Promise<void> {
+  await db.batch([
+    db.prepare(`INSERT INTO settings (key, value, updated_at) VALUES ('users_total', (SELECT CAST(COUNT(*) AS TEXT) FROM users WHERE deleted_at IS NULL), datetime('now')) ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at`),
+    db.prepare(`INSERT INTO settings (key, value, updated_at) VALUES ('comments_total', (SELECT CAST(COUNT(*) AS TEXT) FROM comments WHERE deleted_at IS NULL), datetime('now')) ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at`),
+    db.prepare(`INSERT INTO settings (key, value, updated_at) VALUES ('posts_total', (SELECT CAST(COUNT(*) AS TEXT) FROM posts WHERE deleted_at IS NULL), datetime('now')) ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at`),
+  ]);
+}
+
 export async function listUsers(db: D1Database, page: number, pageSize: number): Promise<{ users: User[]; total: number }> {
   const offset = (page - 1) * pageSize;
-  const total = await db.prepare("SELECT COUNT(*) as count FROM users WHERE deleted_at IS NULL").first<{ count: number }>();
+  // total 物化（users_total）；排序改主键倒序——id 单调递增等价于 created_at 顺序，
+  // 主键索引天然有序，消除 users 全表扫描 + 临时排序（每次后台用户页 = 数十万行读取）
+  const total = await materializedCount(db, 'users_total', 'SELECT COUNT(*) as count FROM users WHERE deleted_at IS NULL');
   const users = await db
-    .prepare("SELECT * FROM users WHERE deleted_at IS NULL ORDER BY created_at DESC LIMIT ? OFFSET ?")
+    .prepare("SELECT * FROM users WHERE deleted_at IS NULL ORDER BY id DESC LIMIT ? OFFSET ?")
     .bind(pageSize, offset)
     .all<User>();
-  return { users: users.results, total: total?.count || 0 };
+  return { users: users.results, total };
 }
 
 export async function updateUserRole(db: D1Database, userId: number, role: string): Promise<void> {
@@ -932,18 +954,19 @@ export async function getTotalStats(db: D1Database): Promise<{
 }> {
   // totalViews 改读物化计数（settings key='total_page_views'，由 recordPageView 每次去重新增时 +1），
   // 不再对百万行 page_views 做 COUNT(*) 全表扫描（管理端打开一次统计页烧百万读行）。
-  // 物化计数从上线之日起计，存量 page_views 数据不计入——可接受；如需精确回填在 073 迁移中一次性回填（本次不做）
+  // users/comments/posts 总数同样物化（users_total 等，每日 cron 校准，见 reconcileTotals），
+  // 消除管理端统计页的两次全表扫描；键缺失时 materializedCount 回落实时 COUNT。
   const [users, posts, comments, views] = await Promise.all([
-    db.prepare('SELECT COUNT(*) as count FROM users WHERE deleted_at IS NULL').first<{ count: number }>(),
-    db.prepare('SELECT COUNT(*) as count FROM posts WHERE deleted_at IS NULL').first<{ count: number }>(),
-    db.prepare('SELECT COUNT(*) as count FROM comments WHERE deleted_at IS NULL').first<{ count: number }>(),
+    materializedCount(db, 'users_total', 'SELECT COUNT(*) as count FROM users WHERE deleted_at IS NULL'),
+    materializedCount(db, 'posts_total', 'SELECT COUNT(*) as count FROM posts WHERE deleted_at IS NULL'),
+    materializedCount(db, 'comments_total', 'SELECT COUNT(*) as count FROM comments WHERE deleted_at IS NULL'),
     db.prepare("SELECT value FROM settings WHERE key = 'total_page_views'").first<{ value: string }>(),
   ]);
 
   return {
-    totalUsers: users?.count || 0,
-    totalPosts: posts?.count || 0,
-    totalComments: comments?.count || 0,
+    totalUsers: users,
+    totalPosts: posts,
+    totalComments: comments,
     // settings.value 为 TEXT，parseInt 解析；缺失/非法时兜底 0（首次上线尚无物化计数时统计页显示 0）
     totalViews: parseInt(views?.value || '', 10) || 0,
   };

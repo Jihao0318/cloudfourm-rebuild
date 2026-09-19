@@ -1969,6 +1969,7 @@ function SettingsPanel() {
     'lottery_draw_cost', 'lottery_draw10_cost', 'lottery_rate_ssr', 'lottery_rate_sr',
     'lottery_rate_r', 'lottery_rate_n', 'lottery_rate_ssr_boost', 'lottery_pity_soft', 'lottery_pity_hard',
     'lottery_daily_draw_limit',
+    'users_total', 'comments_total', 'posts_total',
   ]);
 
   const isOn = (v: string) => v === 'true' || v === '1';

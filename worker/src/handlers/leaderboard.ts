@@ -1,5 +1,6 @@
 import { Hono } from 'hono';
 import type { Env } from '../types';
+import { materializedCount } from '../db/queries';
 
 const leaderboard = new Hono<{ Bindings: Env }>();
 
@@ -52,11 +53,10 @@ leaderboard.get('/coins', async (c) => {
     }
   }
 
-  // 页脚「共 N 位用户」：实时统计（口径与列表一致：未软删用户）
-  const totalRow = await c.env.DB
-    .prepare('SELECT COUNT(*) AS cnt FROM users WHERE deleted_at IS NULL')
-    .first<{ cnt: number }>();
-  const total = totalRow?.cnt || 0;
+  // 页脚「共 N 位用户」：读物化计数（users_total，每日 cron 校准），消除每次请求的 users 全表扫描——
+  // 2026-09-18 实时化改造把 total 改成实时 COUNT，正是 D1 日配额被打爆的主因（EXPLAIN 实锤 SCAN users）。
+  // 榜内积分数字仍保持实时（主查询直接读余额），仅页脚总数走物化。
+  const total = await materializedCount(c.env.DB, 'users_total', 'SELECT COUNT(*) as count FROM users WHERE deleted_at IS NULL');
 
   return c.json({
     success: true,

@@ -2,7 +2,7 @@ import { Hono } from 'hono';
 import type { Env } from './types';
 import { setupRoutes } from './routes';
 import { cleanupUser } from './middleware/auth';
-import { hardDeletePost } from './db/queries';
+import { hardDeletePost, reconcileTotals } from './db/queries';
 import { cleanupTransactions } from './handlers/coins';
 import { consumeAiReviewBatch } from './aiReview';
 
@@ -166,6 +166,14 @@ export default {
         console.log('scheduled cleanup: coin transactions converged (per-user keep 15 + today)');
       } catch (e) {
         console.error('scheduled cleanup coin transactions error:', e);
+      }
+      // 每日校准物化总数（users/comments/posts，写入 settings 供排行榜 total、管理端统计页、用户列表消费），
+      // 恰逢 D1 配额重置窗口做全表 COUNT，换取读路径全天零扫描（详见 queries.ts reconcileTotals）
+      try {
+        await reconcileTotals(env.DB);
+        console.log('scheduled cleanup: totals reconciled (users/comments/posts)');
+      } catch (e) {
+        console.error('scheduled reconcile totals error:', e);
       }
       // 积分榜已改为实时读 user_balances（见 handlers/leaderboard.ts），
       // 不再需要每日物化 leaderboard_cache —— 物化会让榜单最长滞后 24 小时（用户反馈「积分榜不同步」）
