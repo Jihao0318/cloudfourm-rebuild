@@ -255,6 +255,136 @@ function PinnedPanel() {
 // =====================================================================
 // 抽奖管理
 // =====================================================================
+// 奖品类型与稀有度的中文展示（后台奖池管理用）
+const PRIZE_TYPE_LABELS: Record<string, string> = {
+  coins: '积分', rename: '改名卡', vip: 'VIP 体验卡', bump: '推荐卡', highlight: '高亮卡',
+  fortune: '今日运势', avatar_frame: '头像框', title_badge: '称号', rainbow_title: '炫彩标题', announce: '全服公告',
+};
+const RARITY_LABELS: Record<string, string> = { N: 'N · 普通', R: 'R · 蓝色', SR: 'SR · 紫色', SSR: 'SSR · 金色' };
+// 值列的填写提示（部分类型的值固定为 1）
+const VALUE_HINTS: Record<string, string> = {
+  coins: '积分数量，如 350', rename: '改名卡张数，如 1', vip: '格式 档位:天数，如 vip:1、s-vip:3',
+  title_badge: '称号天数，如 7 / 30', rainbow_title: '天数，如 3 / 7', avatar_frame: '天数，如 7',
+  bump: '1（固定）', highlight: '1（固定）', fortune: '1（固定）', announce: '1（固定）',
+};
+
+// =====================================================================
+// 限时兑换商店（管理）：上架/编辑/下架兑换项，全中文字段
+// =====================================================================
+const EXCHANGE_ITEM_LABELS: Record<string, string> = {
+  item_bump: '推荐卡', item_highlight: '高亮卡', item_anonymous_card: '匿名卡',
+  item_post_bg: '帖子背景卡', item_red_packet: '积分红包卡', item_pin_top: '置顶卡（24h）',
+  custom_title: '自定义称号（3天）', item_avatar_frame: '头像框（30天）', item_rainbow_title: '炫彩标题（7天）',
+};
+
+function ExchangeAdminPanel() {
+  const [list, setList] = useState<any[]>([]);
+  const [msg, setMsg] = useState('');
+  const [editing, setEditing] = useState<any | 'new' | null>(null);
+  const inputCls = 'w-full px-3 py-2 text-sm border border-gray-200 rounded-lg outline-none focus:border-primary-400';
+
+  const load = async () => {
+    try { const r = await (adminApi as any).exchangeList(); if (r.success) setList(r.data || []); }
+    catch (e: any) { setMsg(e.message); }
+  };
+  useEffect(() => { load(); }, []);
+
+  const save = async (row: any, id?: number) => {
+    try {
+      if (id) { const r = await (adminApi as any).exchangeUpdate(id, row); if (r.success) { setMsg('已保存'); setEditing(null); load(); } else setMsg(r.error); }
+      else { const r = await (adminApi as any).exchangeCreate(row); if (r.success) { setMsg('兑换项已创建'); setEditing(null); load(); } else setMsg(r.error); }
+    } catch (e: any) { setMsg(e.message); }
+  };
+  const remove = async (id: number) => {
+    try { await (adminApi as any).exchangeDelete(id); setMsg('已删除'); load(); } catch (e: any) { setMsg(e.message); }
+  };
+
+  const fmtItem = (t: string) => EXCHANGE_ITEM_LABELS[t] || t;
+  const fmtEnds = (v: string | null) => v ? v.replace('T', ' ').slice(0, 16) : '长期';
+
+  return (
+    <div className="space-y-4">
+      <Msg msg={msg} onClose={() => setMsg('')} />
+      <div className="flex items-center justify-between">
+        <p className="text-xs text-gray-400">兑换发放的道具与商城/抽奖同链路（进仓库、回收价按商城价 30%）</p>
+        <button onClick={() => setEditing({ name: '', description: '', item_type: 'item_highlight', duration_days: '', price: '', stock: -1, per_user_limit: 0, ends_at: '', is_active: 1 })}
+          className="bg-primary-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-primary-700 transition">+ 新建兑换项</button>
+      </div>
+
+      <div className="bg-white rounded-xl border overflow-x-auto">
+        <table className="w-full text-sm min-w-[760px]">
+          <thead className="bg-gray-50">
+            <tr><th className="px-3 py-2 text-left text-xs text-gray-500">名称</th><th className="px-3 py-2 text-left text-xs text-gray-500">道具</th><th className="px-3 py-2 text-right text-xs text-gray-500">价格</th><th className="px-3 py-2 text-right text-xs text-gray-500">已兑</th><th className="px-3 py-2 text-right text-xs text-gray-500">库存</th><th className="px-3 py-2 text-right text-xs text-gray-500">截止</th><th className="px-3 py-2 text-right text-xs text-gray-500">状态</th><th className="px-3 py-2 text-right text-xs text-gray-500">操作</th></tr>
+          </thead>
+          <tbody className="divide-y">
+            {list.map(o => (
+              <tr key={o.id} className="hover:bg-gray-50">
+                <td className="px-3 py-2 font-medium">{o.name}</td>
+                <td className="px-3 py-2 text-gray-600">{fmtItem(o.item_type)}</td>
+                <td className="px-3 py-2 text-right tabular-nums">{o.price}</td>
+                <td className="px-3 py-2 text-right tabular-nums">{o.sold}</td>
+                <td className="px-3 py-2 text-right tabular-nums">{o.stock < 0 ? '不限' : o.stock}</td>
+                <td className="px-3 py-2 text-right text-xs">{fmtEnds(o.ends_at)}</td>
+                <td className="px-3 py-2 text-right">
+                  {o.is_active ? <span className="text-[11px] bg-green-50 text-green-600 px-1.5 py-0.5 rounded">上架中</span> : <span className="text-[11px] bg-gray-100 text-gray-400 px-1.5 py-0.5 rounded">已下架</span>}
+                </td>
+                <td className="px-3 py-2 text-right whitespace-nowrap">
+                  <button onClick={() => setEditing({ ...o, is_edit: true })} className="text-xs text-primary-600 hover:underline mr-2">编辑</button>
+                  <button onClick={() => remove(o.id)} className="text-xs text-red-600 hover:underline">删除</button>
+                </td>
+              </tr>
+            ))}
+            {list.length === 0 && <tr><td colSpan={8} className="px-3 py-6 text-center text-gray-400 text-sm">还没有兑换项，点右上角「+ 新建兑换项」创建</td></tr>}
+          </tbody>
+        </table>
+      </div>
+
+      {editing !== null && (() => {
+        const isNew = !editing.id;
+        const f = editing;
+        const upd = (k: string, v: unknown) => setEditing({ ...f, [k]: v });
+        return createPortal(
+          <div className="fixed inset-0 z-[60] bg-black/40 flex items-center justify-center p-4" onClick={() => setEditing(null)}>
+            <div className="bg-white rounded-2xl p-6 w-full max-w-lg max-h-[90vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
+              <h3 className="font-bold text-base mb-4">{isNew ? '新建兑换项' : '编辑兑换项'}</h3>
+              <div className="space-y-3">
+                <div><label className="block text-xs text-gray-500 mb-1">名称（展示给用户）</label>
+                  <input className={inputCls} value={f.name || ''} onChange={e => setEditing({ ...f, name: e.target.value })} placeholder="如：鎏金称号 7 天" /></div>
+                <div><label className="block text-xs text-gray-500 mb-1">描述</label>
+                  <input className={inputCls} value={f.description || ''} onChange={e => setEditing({ ...f, description: e.target.value })} placeholder="效果说明，展示在兑换卡片上" /></div>
+                <div><label className="block text-xs text-gray-500 mb-1">发放的道具</label>
+                  <select className={inputCls} value={f.item_type || 'item_highlight'} onChange={e => setEditing({ ...f, item_type: e.target.value })}>
+                    {Object.entries(EXCHANGE_ITEM_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+                  </select></div>
+                <div><label className="block text-xs text-gray-500 mb-1">时长天数（仅限时道具需要，如炫彩/称号类；留空 = 无时长概念）</label>
+                  <input type="number" min="1" className={inputCls} value={f.duration_days ?? ''} onChange={e => setEditing({ ...f, duration_days: e.target.value })} placeholder="如 7" /></div>
+                <div><label className="block text-xs text-gray-500 mb-1">兑换价格（积分）</label>
+                  <input type="number" min="1" className={inputCls} value={f.price ?? ''} onChange={e => setEditing({ ...f, price: e.target.value })} /></div>
+                <div className="grid grid-cols-2 gap-3">
+                  <div><label className="block text-xs text-gray-500 mb-1">库存（-1 = 不限量）</label>
+                    <input type="number" className={inputCls} value={f.stock ?? -1} onChange={e => setEditing({ ...f, stock: e.target.value })} /></div>
+                  <div><label className="block text-xs text-gray-500 mb-1">每人限购（0 = 不限）</label>
+                    <input type="number" min="0" className={inputCls} value={f.per_user_limit ?? 0} onChange={e => setEditing({ ...f, per_user_limit: e.target.value })} /></div>
+                </div>
+                <div><label className="block text-xs text-gray-500 mb-1">截止时间（可选，留空 = 长期）</label>
+                  <input type="datetime-local" className={inputCls} value={f.ends_at || ''} onChange={e => setEditing({ ...f, ends_at: e.target.value })} /></div>
+                <label className="flex items-center gap-2 text-sm text-gray-700">
+                  <input type="checkbox" checked={!!f.is_active} onChange={e => setEditing({ ...f, is_active: e.target.checked ? 1 : 0 })} /> 上架中（用户可见可兑换）
+                </label>
+              </div>
+              <div className="flex justify-end gap-2 mt-5">
+                <button onClick={() => setEditing(null)} className="px-4 py-2 text-sm text-gray-600 border rounded-lg hover:bg-gray-50 transition">取消</button>
+                <button onClick={() => save(f, f.id)} className="px-4 py-2 bg-primary-600 text-white rounded-lg text-sm font-medium hover:bg-primary-700 transition">保存</button>
+              </div>
+            </div>
+          </div>,
+          document.body
+        );
+      })()}
+    </div>
+  );
+}
+
 function LotteryPanel() {
   const [data, setData] = useState<any>(null);
   const [msg, setMsg] = useState('');
@@ -334,7 +464,7 @@ function LotteryPanel() {
         <div className="overflow-x-auto">
           <table className="w-full text-sm min-w-[720px]">
             <thead className="bg-gray-50">
-              <tr><th className={thCls}>名称</th><th className={thCls}>图标</th><th className={thCls}>类型</th><th className={thCls}>值</th><th className={thCls}>稀有度</th><th className={thCls}>权重</th><th className={`${thCls} text-right`}>操作</th></tr>
+              <tr><th className={thCls}>名称</th><th className={thCls}>图标</th><th className={thCls}>类型</th><th className={thCls}>数值 / 效果</th><th className={thCls}>稀有度（档位）</th><th className={thCls}>权重</th><th className={`${thCls} text-right`}>操作</th></tr>
             </thead>
             <tbody className="divide-y">
               {(data.prizes || []).map((p: any) => {
@@ -343,9 +473,12 @@ function LotteryPanel() {
                   <tr key={p.id} className="hover:bg-gray-50">
                     <td className={tdCls}><input className={inputCls} value={e.name} onChange={ev => setCell(p.id, 'name', ev.target.value)} /></td>
                     <td className={tdCls}><input className={`${inputCls} w-16`} value={e.emoji} onChange={ev => setCell(p.id, 'emoji', ev.target.value)} /></td>
-                    <td className={tdCls}><select className={inputCls} value={e.type} onChange={ev => setCell(p.id, 'type', ev.target.value)}>{types.map(t => <option key={t} value={t}>{t}</option>)}</select></td>
-                    <td className={tdCls}><input className={inputCls} value={e.value} onChange={ev => setCell(p.id, 'value', ev.target.value)} placeholder="数量 / vip:天数" /></td>
-                    <td className={tdCls}><select className={inputCls} value={e.rarity} onChange={ev => setCell(p.id, 'rarity', ev.target.value)}>{rarities.map(r => <option key={r} value={r}>{r}</option>)}</select></td>
+                    <td className={tdCls}><select className={inputCls} value={e.type} onChange={ev => { setCell(p.id, 'type', ev.target.value); if (['bump','highlight','fortune','announce'].includes(ev.target.value)) setCell(p.id, 'value', '1'); }}>{types.map(t => <option key={t} value={t}>{PRIZE_TYPE_LABELS[t] || t}</option>)}</select></td>
+                    <td className={tdCls}>
+                      <input className={inputCls} value={e.value} onChange={ev => setCell(p.id, 'value', ev.target.value)} placeholder={VALUE_HINTS[e.type] || '数量'} />
+                      <div className="text-[10px] text-gray-400 mt-0.5">{VALUE_HINTS[e.type] || ''}</div>
+                    </td>
+                    <td className={tdCls}><select className={inputCls} value={e.rarity} onChange={ev => setCell(p.id, 'rarity', ev.target.value)}>{rarities.map(r => <option key={r} value={r}>{RARITY_LABELS[r] || r}</option>)}</select></td>
                     <td className={tdCls}><input type="number" min="1" className={`${inputCls} w-20`} value={e.weight} onChange={ev => setCell(p.id, 'weight', parseInt(ev.target.value) || 1)} /></td>
                     <td className={`${tdCls} text-right whitespace-nowrap`}>
                       <button onClick={() => savePrize(p.id)} className="text-xs text-primary-600 hover:underline mr-2">保存</button>
@@ -358,9 +491,9 @@ function LotteryPanel() {
                 <tr className="bg-gray-50/50">
                   <td className={tdCls}><input className={inputCls} placeholder="新奖品名称" value={e.name || ''} onChange={ev => setCell('new', 'name', ev.target.value)} /></td>
                   <td className={tdCls}><input className={`${inputCls} w-16`} value={e.emoji || ''} onChange={ev => setCell('new', 'emoji', ev.target.value)} /></td>
-                  <td className={tdCls}><select className={inputCls} value={e.type || 'coins'} onChange={ev => setCell('new', 'type', ev.target.value)}>{types.map(t => <option key={t} value={t}>{t}</option>)}</select></td>
+                  <td className={tdCls}><select className={inputCls} value={e.type || 'coins'} onChange={ev => { setCell('new', 'type', ev.target.value); if (['bump','highlight','fortune','announce'].includes(ev.target.value)) setCell('new', 'value', '1'); }}>{types.map(t => <option key={t} value={t}>{PRIZE_TYPE_LABELS[t] || t}</option>)}</select></td>
                   <td className={tdCls}><input className={inputCls} value={e.value || ''} onChange={ev => setCell('new', 'value', ev.target.value)} /></td>
-                  <td className={tdCls}><select className={inputCls} value={e.rarity || 'N'} onChange={ev => setCell('new', 'rarity', ev.target.value)}>{rarities.map(r => <option key={r} value={r}>{r}</option>)}</select></td>
+                  <td className={tdCls}><select className={inputCls} value={e.rarity || 'N'} onChange={ev => setCell('new', 'rarity', ev.target.value)}>{rarities.map(r => <option key={r} value={r}>{RARITY_LABELS[r] || r}</option>)}</select></td>
                   <td className={tdCls}><input type="number" min="1" className={`${inputCls} w-20`} value={e.weight || 1} onChange={ev => setCell('new', 'weight', parseInt(ev.target.value) || 1)} /></td>
                   <td className={`${tdCls} text-right`}><button onClick={() => savePrize('new')} className="text-xs bg-primary-600 text-white px-3 py-1.5 rounded-lg hover:bg-primary-700 transition">添加</button></td>
                 </tr>
@@ -775,7 +908,7 @@ function VipPanel() {
 // =====================================================================
 export type AdminMenuId =
   | 'stats' | 'users' | 'unban' | 'posts' | 'comments' | 'pinned' | 'reports'
-  | 'boards' | 'coins' | 'vips' | 'lottery' | 'settings' | 'announcement' | 'invites' | 'sec_logs' | 'patrol';
+  | 'boards' | 'coins' | 'vips' | 'lottery' | 'settings' | 'announcement' | 'invites' | 'sec_logs' | 'patrol' | 'exchange';
 
 const MENU: { section: string; items: { id: AdminMenuId; label: string; icon: string }[] }[] = [
   { section: '', items: [{ id: 'stats', label: '概览', icon: '📊' }] },
@@ -847,6 +980,7 @@ export default function Admin() {
       case 'stats': return <StatsPanel go={setMenu} />;
       case 'pinned': return <PinnedPanel />;
       case 'lottery': return <LotteryPanel />;
+      case 'exchange': return <ExchangeAdminPanel />;
       case 'users': return <UsersPanel />;
       case 'vips': return <VipPanel />;
       case 'posts': return <PostsPanel />;
