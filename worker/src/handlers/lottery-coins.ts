@@ -414,6 +414,7 @@ async function handleDraw(c: any, user: JWTPayload, count: number, isTenPull: bo
   }
 
   // 6. 更新保底 + 当日抽数（使用 SQL 级增量避免并发覆盖；抽数按 UTC+8 业务日重置）
+  // 注意：两分支占位符数必须与 bind 参数数一致——SSR 分支 5 个，非 SSR 分支 7 个
   const pityUpsert = hasSSR
     ? c.env.DB.prepare(`INSERT INTO lottery_pity (user_id, pulls_since_ssr, total_pulls, draws_date, draws_today)
         VALUES (?, 0, ?, ?, ?) ON CONFLICT(user_id) DO UPDATE SET
@@ -426,7 +427,7 @@ async function handleDraw(c: any, user: JWTPayload, count: number, isTenPull: bo
           draws_today = CASE WHEN lottery_pity.draws_date = excluded.draws_date THEN lottery_pity.draws_today + excluded.draws_today ELSE excluded.draws_today END,
           draws_date = excluded.draws_date`);
   stmts.push(hasSSR
-    ? pityUpsert.bind(user.userId, 0, count, today, count, count)
+    ? pityUpsert.bind(user.userId, count, today, count, count)
     : pityUpsert.bind(user.userId, pullsSinceSSR, count, today, count, count, count));
 
   // 7. 全服公告
