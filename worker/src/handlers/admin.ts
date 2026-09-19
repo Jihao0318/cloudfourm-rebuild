@@ -1085,6 +1085,31 @@ admin.get('/shop', async (c) => {
   return c.json({ success: true, data: { shop: oldItems.results || [], extras: extras.results || [] } });
 });
 
+// 批量保存全局排序（商城物价面板 ↑↓）：list = [{src, id, sort_order}]
+admin.put('/shop/order', async (c) => {
+  try {
+    const b = await c.req.json();
+    const list: any[] = Array.isArray(b?.list) ? b.list : [];
+    if (list.length === 0 || list.length > 100) return c.json({ success: false, error: '排序数据无效' }, 400);
+    const stmts: any[] = [];
+    for (const it of list) {
+      const src = it?.src;
+      const id = parseInt(it?.id);
+      const so = parseInt(it?.sort_order);
+      if ((src !== 'shop' && src !== 'extras') || !Number.isFinite(id) || !Number.isFinite(so) || so < 0) {
+        return c.json({ success: false, error: '排序数据无效' }, 400);
+      }
+      const table = src === 'shop' ? 'shop_items' : 'shop_extras';
+      stmts.push(c.env.DB.prepare(`UPDATE ${table} SET sort_order = ? WHERE id = ?`).bind(so, id));
+    }
+    await c.env.DB.batch(stmts);
+    return c.json({ success: true, message: '排序已保存' });
+  } catch (e) {
+    console.error('[admin/shop-order] 排序失败:', e);
+    return c.json({ success: false, error: '排序保存失败' }, 500);
+  }
+});
+
 // src = shop（shop_items，改名卡/帖子装扮）| extras（shop_extras，各类卡）；仅允许改价格与上下架
 admin.put('/shop/:src/:id', async (c) => {
   const src = c.req.param('src');

@@ -16,12 +16,17 @@ const MAX_BUY_QUANTITY = 10;
 
 // 获取商品列表
 shop.get('/items', async (c) => {
-  const [old, extra] = await Promise.all([
+  const [oldItems, extra] = await Promise.all([
     c.env.DB.prepare('SELECT * FROM shop_items WHERE is_active = 1 ORDER BY sort_order ASC, id ASC').all<any>(),
     c.env.DB.prepare('SELECT * FROM shop_extras WHERE is_active = 1 ORDER BY sort_order ASC, id ASC').all<any>(),
   ]);
   const extras = (extra.results || []).map((e: any) => ({ ...e, id: e.id + EXTRA_ID_OFFSET, src: 'extra' }));
-  return c.json({ success: true, data: [...(old.results || []), ...extras] });
+  // 全局按 sort_order 归并（088 起 extras 基线为 1000+id），后台「商城物价」可跨表调整顺序
+  const merged = [
+    ...(oldItems.results || []).map((o: any) => ({ ...o, src: 'shop' })),
+    ...extras,
+  ].sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0) || a.id - b.id);
+  return c.json({ success: true, data: merged });
 });
 
 // 购买商品

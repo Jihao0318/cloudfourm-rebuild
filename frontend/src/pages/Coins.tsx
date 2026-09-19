@@ -6,7 +6,7 @@ import { formatDateTime } from '../utils/date';
 import BackButton from '../components/BackButton';
 
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
-import { faShoppingBag, faBox, faCalendarAlt, faEdit, faComments, faHeart, faDice, faTrophy, faCoins } from '@fortawesome/free-solid-svg-icons';
+import { faShoppingBag, faBox, faCalendarAlt, faEdit, faComments, faHeart, faDice, faTrophy, faCoins, faGift } from '@fortawesome/free-solid-svg-icons';
 
 export default function Coins() {
   const { user, loading: authLoading } = useAuth();
@@ -235,7 +235,8 @@ export default function Coins() {
       </div>
 
       {/* 积分相关功能入口 */}
-      <div className="grid grid-cols-2 gap-2.5 sm:gap-3">
+      {/* 奇数个入口时最后一张自动占满整行，避免孤行难看 */}
+      <div className="grid grid-cols-2 gap-2.5 sm:gap-3 [&>:last-child:nth-child(odd)]:col-span-2">
         <button onClick={() => navigate('/shop')} className="bg-white border border-gray-200 rounded-2xl p-3.5 sm:p-4 text-center hover:border-primary-300 hover:shadow-sm transition">
           <div className="text-xl sm:text-2xl mb-1"><FontAwesomeIcon icon={faShoppingBag} /></div>
           <div className="text-sm font-medium text-gray-700">积分商城</div>
@@ -250,6 +251,11 @@ export default function Coins() {
           <div className="text-xl sm:text-2xl mb-1"><FontAwesomeIcon icon={faDice} /></div>
           <div className="text-sm font-medium text-gray-700">积分抽奖</div>
           <div className="text-xs text-gray-400">试试手气</div>
+        </button>
+        <button onClick={() => navigate('/red-packets')} className="bg-white border border-gray-200 rounded-2xl p-3.5 sm:p-4 text-center hover:border-primary-300 hover:shadow-sm transition">
+          <div className="text-xl sm:text-2xl mb-1"><FontAwesomeIcon icon={faGift} /></div>
+          <div className="text-sm font-medium text-gray-700">红包</div>
+          <div className="text-xs text-gray-400">发红包 / 抢红包</div>
         </button>
         <button onClick={() => navigate('/leaderboard')} className="bg-white border border-gray-200 rounded-2xl p-3.5 sm:p-4 text-center hover:border-primary-300 hover:shadow-sm transition">
           <div className="text-xl sm:text-2xl mb-1"><FontAwesomeIcon icon={faTrophy} /></div>

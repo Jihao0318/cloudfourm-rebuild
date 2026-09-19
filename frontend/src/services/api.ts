@@ -800,6 +800,8 @@ export const unban = {
   request<{ shop: any[]; extras: any[] }>('/admin/shop');
 ;(admin as any).shopUpdate = (src: 'shop' | 'extras', id: number, data: Record<string, unknown>) =>
   request<{ message: string }>(`/admin/shop/${src}/${id}`, { method: 'PUT', body: JSON.stringify(data) });
+;(admin as any).shopOrder = (list: { src: 'shop' | 'extras'; id: number; sort_order: number }[]) =>
+  request<{ message: string }>('/admin/shop/order', { method: 'PUT', body: JSON.stringify({ list }) });
 
 ;(admin as any).lottery = () =>
   request<any>('/admin/lottery');

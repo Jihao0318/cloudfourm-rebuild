@@ -289,7 +289,7 @@ const SHOP_TYPE_LABELS: Record<string, string> = {
 };
 
 function ShopPricePanel() {
-  const [rows, setRows] = useState<{ src: 'shop' | 'extras'; id: number; name: string; type: string; price: number; is_active: number }[]>([]);
+  const [rows, setRows] = useState<{ src: 'shop' | 'extras'; id: number; name: string; type: string; price: number; is_active: number; sort_order: number }[]>([]);
   const [msg, setMsg] = useState('');
   const [prices, setPrices] = useState<Record<string, string>>({});
   const [saving, setSaving] = useState<string>('');
@@ -301,7 +301,7 @@ function ShopPricePanel() {
         const all = [
           ...(r.data.shop || []).map((i: any) => ({ ...i, src: 'shop' as const })),
           ...(r.data.extras || []).map((i: any) => ({ ...i, src: 'extras' as const })),
-        ];
+        ].sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0) || a.id - b.id);
         setRows(all);
         setPrices(Object.fromEntries(all.map(i => [`${i.src}:${i.id}`, String(i.price)])));
       } else setMsg(r.error || '加载失败');
@@ -337,10 +337,26 @@ function ShopPricePanel() {
 
   const inputCls = 'w-24 px-2 py-1.5 text-sm border border-gray-200 rounded-lg outline-none focus:border-primary-400 tabular-nums';
 
+  // ↑↓ 调整全局顺序：与相邻项交换后，按新顺序重排 sort_order 并整体保存（用户端商城即时生效）
+  const move = async (idx: number, dir: -1 | 1) => {
+    const j = idx + dir;
+    if (j < 0 || j >= rows.length) return;
+    setSaving('order');
+    const next = [...rows];
+    [next[idx], next[j]] = [next[j], next[idx]];
+    const withOrder = next.map((r, i) => ({ ...r, sort_order: i + 1 }));
+    try {
+      const r = await (adminApi as any).shopOrder(withOrder.map((x: any) => ({ src: x.src, id: x.id, sort_order: x.sort_order })));
+      if (r.success) { setRows(withOrder); setMsg(`「${next[idx].name}」已${dir === -1 ? '上移' : '下移'}`); }
+      else { setMsg(r.error || '排序保存失败'); load(); }
+    } catch (e: any) { setMsg(e.message); load(); }
+    setSaving('');
+  };
+
   return (
     <div className="space-y-4">
       <Msg msg={msg} onClose={() => setMsg('')} />
-      <p className="text-xs text-gray-400">改价立即生效（用户端按此处价格扣款）；下架后商城不可见、不可购买，已购用户不受影响</p>
+      <p className="text-xs text-gray-400">改价立即生效（用户端按此处价格扣款）；下架后商城不可见、不可购买，已购用户不受影响；↑↓ 调整商品在商城的展示顺序（跨区可调），保存后即时生效</p>
       <div className="bg-white rounded-xl border overflow-x-auto">
         <table className="w-full text-sm min-w-[640px]">
           <thead className="bg-gray-50">
@@ -349,11 +365,12 @@ function ShopPricePanel() {
               <th className="px-3 py-2 text-left text-xs text-gray-500">类型</th>
               <th className="px-3 py-2 text-left text-xs text-gray-500">所属区</th>
               <th className="px-3 py-2 text-left text-xs text-gray-500">价格（积分）</th>
+              <th className="px-3 py-2 text-left text-xs text-gray-500">排序</th>
               <th className="px-3 py-2 text-right text-xs text-gray-500">状态</th>
             </tr>
           </thead>
           <tbody className="divide-y">
-            {rows.map(i => {
+            {rows.map((i, idx) => {
               const k = keyOf(i);
               return (
                 <tr key={k} className="hover:bg-gray-50">
@@ -374,6 +391,14 @@ function ShopPricePanel() {
                       </button>
                     </div>
                   </td>
+                  <td className="px-3 py-2">
+                    <div className="flex items-center gap-1">
+                      <button onClick={() => move(idx, -1)} disabled={saving === 'order' || idx === 0}
+                        className="w-6 h-6 text-xs border border-gray-200 rounded text-gray-500 hover:bg-gray-100 disabled:opacity-30" title="上移">↑</button>
+                      <button onClick={() => move(idx, 1)} disabled={saving === 'order' || idx === rows.length - 1}
+                        className="w-6 h-6 text-xs border border-gray-200 rounded text-gray-500 hover:bg-gray-100 disabled:opacity-30" title="下移">↓</button>
+                    </div>
+                  </td>
                   <td className="px-3 py-2 text-right">
                     <button onClick={() => toggleActive(i)} disabled={saving === k} className="disabled:opacity-40">
                       {i.is_active
@@ -384,7 +409,7 @@ function ShopPricePanel() {
                 </tr>
               );
             })}
-            {rows.length === 0 && <tr><td colSpan={5} className="px-3 py-6 text-center text-gray-400 text-sm">暂无商品</td></tr>}
+            {rows.length === 0 && <tr><td colSpan={6} className="px-3 py-6 text-center text-gray-400 text-sm">暂无商品</td></tr>}
           </tbody>
         </table>
       </div>
