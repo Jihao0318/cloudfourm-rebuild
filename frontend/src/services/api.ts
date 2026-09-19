@@ -796,6 +796,11 @@ export const unban = {
 ;(admin as any).exchangeDelete = (id: number) =>
   request<{ message: string }>(`/admin/exchange/${id}`, { method: 'DELETE' });
 
+;(admin as any).shopList = () =>
+  request<{ shop: any[]; extras: any[] }>('/admin/shop');
+;(admin as any).shopUpdate = (src: 'shop' | 'extras', id: number, data: Record<string, unknown>) =>
+  request<{ message: string }>(`/admin/shop/${src}/${id}`, { method: 'PUT', body: JSON.stringify(data) });
+
 ;(admin as any).lottery = () =>
   request<any>('/admin/lottery');
 ;(admin as any).updateLotteryConfig = (config: Record<string, number>) =>

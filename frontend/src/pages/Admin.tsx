@@ -269,6 +269,122 @@ const VALUE_HINTS: Record<string, string> = {
 };
 
 // =====================================================================
+// 商城物价：双表商品（shop_items 经典区 / shop_extras 卡类）调价 + 上下架
+// =====================================================================
+const SHOP_TYPE_LABELS: Record<string, string> = {
+  rename_card: '改名卡', post_decoration: '帖子装扮',
+  custom_title: '自定义称号', rainbow_nick: '炫彩昵称', pin_card: '置顶卡（旧）',
+  colored_comment: '彩色评论框', stealth_card: '隐身卡',
+  item_avatar_frame: '头像框', item_rainbow_title: '炫彩标题', item_bump: '推荐卡',
+  item_highlight: '高亮卡', item_pin_top: '置顶卡', item_red_packet: '积分红包卡',
+  item_anonymous_card: '匿名卡', item_post_bg: '帖子背景卡',
+};
+
+function ShopPricePanel() {
+  const [rows, setRows] = useState<{ src: 'shop' | 'extras'; id: number; name: string; type: string; price: number; is_active: number }[]>([]);
+  const [msg, setMsg] = useState('');
+  const [prices, setPrices] = useState<Record<string, string>>({});
+  const [saving, setSaving] = useState<string>('');
+
+  const load = async () => {
+    try {
+      const r = await (adminApi as any).shopList();
+      if (r.success) {
+        const all = [
+          ...(r.data.shop || []).map((i: any) => ({ ...i, src: 'shop' as const })),
+          ...(r.data.extras || []).map((i: any) => ({ ...i, src: 'extras' as const })),
+        ];
+        setRows(all);
+        setPrices(Object.fromEntries(all.map(i => [`${i.src}:${i.id}`, String(i.price)])));
+      } else setMsg(r.error || '加载失败');
+    } catch (e: any) { setMsg(e.message); }
+  };
+  useEffect(() => { load(); }, []);
+
+  const keyOf = (i: any) => `${i.src}:${i.id}`;
+
+  const savePrice = async (i: any) => {
+    const k = keyOf(i);
+    const v = parseInt(prices[k]);
+    if (!Number.isFinite(v) || v < 1) { setMsg('价格必须为正整数'); return; }
+    if (v === i.price) { setMsg('价格没有变化'); return; }
+    setSaving(k);
+    try {
+      const r = await (adminApi as any).shopUpdate(i.src, i.id, { price: v });
+      if (r.success) { setMsg(`「${i.name}」价格已改为 ${v}`); load(); }
+      else setMsg(r.error || '保存失败');
+    } catch (e: any) { setMsg(e.message); }
+    setSaving('');
+  };
+
+  const toggleActive = async (i: any) => {
+    setSaving(keyOf(i));
+    try {
+      const r = await (adminApi as any).shopUpdate(i.src, i.id, { is_active: i.is_active ? 0 : 1 });
+      if (r.success) { setMsg(`「${i.name}」已${i.is_active ? '下架' : '上架'}`); load(); }
+      else setMsg(r.error || '操作失败');
+    } catch (e: any) { setMsg(e.message); }
+    setSaving('');
+  };
+
+  const inputCls = 'w-24 px-2 py-1.5 text-sm border border-gray-200 rounded-lg outline-none focus:border-primary-400 tabular-nums';
+
+  return (
+    <div className="space-y-4">
+      <Msg msg={msg} onClose={() => setMsg('')} />
+      <p className="text-xs text-gray-400">改价立即生效（用户端按此处价格扣款）；下架后商城不可见、不可购买，已购用户不受影响</p>
+      <div className="bg-white rounded-xl border overflow-x-auto">
+        <table className="w-full text-sm min-w-[640px]">
+          <thead className="bg-gray-50">
+            <tr>
+              <th className="px-3 py-2 text-left text-xs text-gray-500">商品</th>
+              <th className="px-3 py-2 text-left text-xs text-gray-500">类型</th>
+              <th className="px-3 py-2 text-left text-xs text-gray-500">所属区</th>
+              <th className="px-3 py-2 text-left text-xs text-gray-500">价格（积分）</th>
+              <th className="px-3 py-2 text-right text-xs text-gray-500">状态</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y">
+            {rows.map(i => {
+              const k = keyOf(i);
+              return (
+                <tr key={k} className="hover:bg-gray-50">
+                  <td className="px-3 py-2 font-medium">{i.name}</td>
+                  <td className="px-3 py-2 text-gray-600 text-xs">{SHOP_TYPE_LABELS[i.type] || i.type}</td>
+                  <td className="px-3 py-2">
+                    <span className={`text-[11px] px-1.5 py-0.5 rounded ${i.src === 'shop' ? 'bg-gray-100 text-gray-500' : 'bg-blue-50 text-blue-600'}`}>
+                      {i.src === 'shop' ? '经典区' : '卡片区'}
+                    </span>
+                  </td>
+                  <td className="px-3 py-2">
+                    <div className="flex items-center gap-2">
+                      <input type="number" min="1" className={inputCls} value={prices[k] ?? ''}
+                        onChange={e => setPrices({ ...prices, [k]: e.target.value })} />
+                      <button onClick={() => savePrice(i)} disabled={saving === k}
+                        className="text-xs text-primary-600 hover:underline disabled:opacity-40">
+                        {saving === k ? '保存中…' : '保存'}
+                      </button>
+                    </div>
+                  </td>
+                  <td className="px-3 py-2 text-right">
+                    <button onClick={() => toggleActive(i)} disabled={saving === k} className="disabled:opacity-40">
+                      {i.is_active
+                        ? <span className="text-[11px] bg-green-50 text-green-600 px-1.5 py-0.5 rounded hover:bg-green-100">上架中 · 点击下架</span>
+                        : <span className="text-[11px] bg-gray-100 text-gray-400 px-1.5 py-0.5 rounded hover:bg-gray-200">已下架 · 点击上架</span>}
+                    </button>
+                  </td>
+                </tr>
+              );
+            })}
+            {rows.length === 0 && <tr><td colSpan={5} className="px-3 py-6 text-center text-gray-400 text-sm">暂无商品</td></tr>}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
+// =====================================================================
 // 限时兑换商店（管理）：上架/编辑/下架兑换项，全中文字段
 // =====================================================================
 const EXCHANGE_ITEM_LABELS: Record<string, string> = {
@@ -908,7 +1024,7 @@ function VipPanel() {
 // =====================================================================
 export type AdminMenuId =
   | 'stats' | 'users' | 'unban' | 'posts' | 'comments' | 'pinned' | 'reports'
-  | 'boards' | 'coins' | 'vips' | 'lottery' | 'settings' | 'announcement' | 'invites' | 'sec_logs' | 'patrol' | 'exchange';
+  | 'boards' | 'coins' | 'vips' | 'lottery' | 'settings' | 'announcement' | 'invites' | 'sec_logs' | 'patrol' | 'exchange' | 'shop';
 
 const MENU: { section: string; items: { id: AdminMenuId; label: string; icon: string }[] }[] = [
   { section: '', items: [{ id: 'stats', label: '概览', icon: '📊' }] },
@@ -981,6 +1097,7 @@ export default function Admin() {
       case 'pinned': return <PinnedPanel />;
       case 'lottery': return <LotteryPanel />;
       case 'exchange': return <ExchangeAdminPanel />;
+      case 'shop': return <ShopPricePanel />;
       case 'users': return <UsersPanel />;
       case 'vips': return <VipPanel />;
       case 'posts': return <PostsPanel />;

@@ -1076,6 +1076,42 @@ admin.delete('/exchange/:id', async (c) => {
   return c.json({ success: true, message: '已删除' });
 });
 
+// ─── 商城物价：双表商品列表（shop_items + shop_extras）+ 调价 / 上下架 ───
+admin.get('/shop', async (c) => {
+  const [oldItems, extras] = await Promise.all([
+    c.env.DB.prepare('SELECT id, name, type, price, is_active, sort_order FROM shop_items ORDER BY sort_order ASC, id ASC').all(),
+    c.env.DB.prepare('SELECT id, name, type, price, is_active, sort_order FROM shop_extras ORDER BY sort_order ASC, id ASC').all(),
+  ]);
+  return c.json({ success: true, data: { shop: oldItems.results || [], extras: extras.results || [] } });
+});
+
+// src = shop（shop_items，改名卡/帖子装扮）| extras（shop_extras，各类卡）；仅允许改价格与上下架
+admin.put('/shop/:src/:id', async (c) => {
+  const src = c.req.param('src');
+  const id = parseInt(c.req.param('id'));
+  if ((src !== 'shop' && src !== 'extras') || !Number.isFinite(id)) {
+    return c.json({ success: false, error: '参数无效' }, 400);
+  }
+  const b = await c.req.json();
+  const sets: string[] = [];
+  const binds: unknown[] = [];
+  if (b.price !== undefined) {
+    const p = parseInt(String(b.price));
+    if (!Number.isFinite(p) || p < 1) return c.json({ success: false, error: '价格必须为正整数' }, 400);
+    sets.push('price = ?');
+    binds.push(p);
+  }
+  if (b.is_active !== undefined) {
+    sets.push('is_active = ?');
+    binds.push(b.is_active ? 1 : 0);
+  }
+  if (sets.length === 0) return c.json({ success: false, error: '没有要更新的字段' }, 400);
+  binds.push(id);
+  const table = src === 'shop' ? 'shop_items' : 'shop_extras';
+  const r = await c.env.DB.prepare(`UPDATE ${table} SET ${sets.join(', ')} WHERE id = ?`).bind(...binds).run();
+  return c.json({ success: r.meta.changes > 0, message: '已保存' });
+});
+
 // 多人复核投票（仿帖子巡查）：confirm 达到 review_violation_limit 人确认违规 → 删除；
 // pass 达到 review_pass_limit 人 → 驳回；管理员一票否决/一票通过
 admin.post('/reports/:id/review', async (c) => {
