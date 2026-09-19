@@ -609,7 +609,8 @@ export default function PostDetail() {
             <div className="flex items-center gap-3 flex-1 min-w-0">{authorInfo}</div>
           )}
           <div className="flex flex-wrap items-center justify-start sm:justify-end gap-1.5 shrink-0">
-            {(user?.role === 'admin' || user?.role === 'moderator') && (
+            {/* 回避规则：巡查员不能置顶自己的帖子（后端同步拦截）；管理员不受限 */}
+            {(user?.role === 'admin' || (user?.role === 'moderator' && post.user_id !== user.id)) && (
               <button onClick={handlePinToggle} className={`text-xs border px-2.5 py-1 rounded-lg transition ${post.is_pinned ? 'bg-yellow-50 text-yellow-700 border-yellow-300 hover:bg-yellow-100' : 'text-gray-500 hover:text-yellow-600 border-gray-300 hover:border-yellow-400'}`}>
                 {post.is_pinned ? <><FontAwesomeIcon icon={faThumbtack} /> 取消置顶</> : <><FontAwesomeIcon icon={faThumbtack} /> 置顶</>}
               </button>

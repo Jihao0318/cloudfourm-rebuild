@@ -540,6 +540,13 @@ posts.put('/:id/pin', requireAuth, async (c) => {
   if (id === null) return c.json({ success: false, error: '无效的帖子ID' }, 400);
   const { is_pinned } = await c.req.json();
 
+  // 回避规则（管理员豁免）：巡查员不能置顶自己的帖子——
+  // 置顶是版务动作，对自己的帖子使用属于以权谋私（2026-09-19 用户反馈的 bug）
+  const pinOwner = await getPostOwner(c.env.DB, id);
+  if (dbUser.role !== 'admin' && pinOwner && pinOwner.user_id === user.userId) {
+    return c.json({ success: false, error: '不能置顶自己的帖子' }, 403);
+  }
+
   const exists = await postExists(c.env.DB, id);
   if (!exists) return c.json({ success: false, error: '帖子不存在' }, 404);
 
