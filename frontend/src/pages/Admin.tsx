@@ -6,6 +6,7 @@ import { admin as adminApi, categories as categoriesApi, site as siteApi } from 
 import { formatDateTime } from '../utils/date';
 import type { Category } from '../types';
 import BackButton from '../components/BackButton';
+import { reloadAvatarFrames } from '../components/Avatar';
 
 // =====================================================================
 // 管理后台（侧边栏布局版）
@@ -313,6 +314,7 @@ function FrameSliders({ scale, ox, oy, onChange }: { scale: number; ox: number; 
 }
 
 function FrameAdminPanel() {
+  const { user, refreshUser } = useAuth();
   const [list, setList] = useState<any[]>([]);
   const [msg, setMsg] = useState('');
   // 新建表单
@@ -324,16 +326,22 @@ function FrameAdminPanel() {
   // 编辑中（id → 草稿值）
   const [edits, setEdits] = useState<Record<number, { scale: number; ox: number; oy: number }>>({});
   const [saving, setSaving] = useState<string>('');
-  // 发放
+  // 发放（行内直接发：搜索 → 点发放，两步）
   const [search, setSearch] = useState('');
   const [results, setResults] = useState<any[]>([]);
-  const [target, setTarget] = useState<any>(null);
   const [grantFrame, setGrantFrame] = useState<number | ''>('');
   const [grantDays, setGrantDays] = useState('30');
+  const [granting, setGranting] = useState<number | null>(null);
 
   const load = async () => {
-    try { const r = await adminApi.listAvatarFrames(); if (r.success) setList(r.data || []); }
-    catch (e: any) { setMsg(e.message); }
+    try {
+      const r = await adminApi.listAvatarFrames();
+      if (r.success) {
+        setList(r.data || []);
+        const first = (r.data || []).find(f => f.enabled);
+        if (grantFrame === '' && first) setGrantFrame(first.id);
+      }
+    } catch (e: any) { setMsg(e.message); }
   };
   useEffect(() => { load(); }, []);
 
@@ -344,7 +352,7 @@ function FrameAdminPanel() {
     setSaving('new');
     try {
       const r = await adminApi.createAvatarFrame({ name: nName.trim(), image_url: nUrl.trim(), scale: nScale, offset_x: nOx, offset_y: nOy });
-      if (r.success) { setMsg('已添加'); setNName(''); setNUrl(''); load(); }
+      if (r.success) { setMsg('已添加'); setNName(''); setNUrl(''); load(); reloadAvatarFrames(); }
       else setMsg(r.error || '添加失败');
     } catch (e: any) { setMsg(e.message); }
     setSaving('');
@@ -355,7 +363,7 @@ function FrameAdminPanel() {
     setSaving(String(f.id));
     try {
       const r = await adminApi.updateAvatarFrame(f.id, d);
-      if (r.success) { setMsg(`「${f.name}」已保存`); const e2 = { ...edits }; delete e2[f.id]; setEdits(e2); load(); }
+      if (r.success) { setMsg(`「${f.name}」已保存`); const e2 = { ...edits }; delete e2[f.id]; setEdits(e2); load(); reloadAvatarFrames(); }
       else setMsg(r.error || '保存失败');
     } catch (e: any) { setMsg(e.message); }
     setSaving('');
@@ -363,14 +371,14 @@ function FrameAdminPanel() {
 
   const toggleEnabled = async (f: any) => {
     setSaving(String(f.id));
-    try { const r = await adminApi.updateAvatarFrame(f.id, { enabled: f.enabled ? 0 : 1 }); if (r.success) { setMsg(f.enabled ? '已下架' : '已上架'); load(); } else setMsg(r.error || '操作失败'); }
+    try { const r = await adminApi.updateAvatarFrame(f.id, { enabled: f.enabled ? 0 : 1 }); if (r.success) { setMsg(f.enabled ? '已下架' : '已上架'); load(); reloadAvatarFrames(); } else setMsg(r.error || '操作失败'); }
     catch (e: any) { setMsg(e.message); }
     setSaving('');
   };
 
   const del = async (f: any) => {
     if (!window.confirm(`删除「${f.name}」？佩戴中的用户会自动摘除`)) return;
-    try { const r = await adminApi.deleteAvatarFrame(f.id); if (r.success) { setMsg('已删除'); load(); } else setMsg(r.error || '删除失败'); }
+    try { const r = await adminApi.deleteAvatarFrame(f.id); if (r.success) { setMsg('已删除'); load(); reloadAvatarFrames(); } else setMsg(r.error || '删除失败'); }
     catch (e: any) { setMsg(e.message); }
   };
 
@@ -382,10 +390,16 @@ function FrameAdminPanel() {
 
   const grant = async (u: any) => {
     if (grantFrame === '') { setMsg('先选择头像框'); return; }
+    setGranting(u.id);
     try {
       const r = await adminApi.grantAvatarFrame(u.id, Number(grantFrame), parseInt(grantDays) || 30);
-      if (r.success) setMsg(r.message || '已发放'); else setMsg(r.error || '发放失败');
+      if (r.success) {
+        setMsg(r.message || '已发放');
+        // 发给自己时刷新会话用户对象，头像立即戴框（他人用户下次拉取自然生效）
+        if (user && u.id === user.id) await refreshUser();
+      } else setMsg(r.error || '发放失败');
     } catch (e: any) { setMsg(e.message); }
+    setGranting(null);
   };
 
   const inputCls2 = 'w-full px-3 py-2 text-sm border border-gray-200 rounded-lg outline-none focus:border-primary-400';
@@ -456,37 +470,37 @@ function FrameAdminPanel() {
       <div className="bg-white rounded-xl border p-4 md:p-6">
         <h3 className="font-bold mb-1">🎁 发放给用户</h3>
         <p className="text-xs text-gray-400 mb-4">同框重复发放自动续期叠加，异框替换并从今天重新起算；仅可发放「上架中」的框</p>
-        <div className="flex flex-wrap gap-2 mb-3">
-          <input value={search} onChange={e => setSearch(e.target.value)} onKeyDown={e => e.key === 'Enter' && doSearch()}
-            placeholder="输入用户名搜索" className="w-56 px-3 py-2 text-sm border border-gray-200 rounded-lg outline-none focus:border-primary-400" />
-          <button onClick={doSearch} className="px-4 py-2 bg-gray-100 rounded-lg text-sm hover:bg-gray-200 transition">搜索</button>
+        <div className="flex flex-wrap items-end gap-3 mb-3">
+          <div>
+            <label className="block text-xs text-gray-500 mb-1">头像框</label>
+            <select value={grantFrame} onChange={e => setGrantFrame(e.target.value ? parseInt(e.target.value) : '')} className="px-3 py-2 text-sm border border-gray-200 rounded-lg outline-none focus:border-primary-400">
+              <option value="">选择…</option>
+              {list.filter(f => f.enabled).map(f => <option key={f.id} value={f.id}>{f.name}</option>)}
+            </select>
+          </div>
+          <div>
+            <label className="block text-xs text-gray-500 mb-1">有效天数</label>
+            <input type="number" min="1" max="3650" value={grantDays} onChange={e => setGrantDays(e.target.value)} className="w-28 px-3 py-2 text-sm border border-gray-200 rounded-lg outline-none focus:border-primary-400" />
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <input value={search} onChange={e => setSearch(e.target.value)} onKeyDown={e => e.key === 'Enter' && doSearch()}
+              placeholder="输入用户名搜索" className="w-56 px-3 py-2 text-sm border border-gray-200 rounded-lg outline-none focus:border-primary-400" />
+            <button onClick={doSearch} className="px-4 py-2 bg-gray-100 rounded-lg text-sm hover:bg-gray-200 transition">搜索</button>
+          </div>
         </div>
-        <div className="divide-y mb-3">
+        <div className="divide-y">
           {results.map(u => (
-            <div key={u.id} className="py-2 flex items-center gap-3 text-sm">
+            <div key={u.id} className="py-2 flex flex-wrap items-center gap-2 text-sm">
               <span className="font-medium text-gray-700">{u.username}</span>
               <span className="text-xs text-gray-400">#{u.id}</span>
-              {target?.id === u.id ? <span className="text-[11px] text-primary-600">已选中 ↓</span>
-                : <button onClick={() => setTarget(u)} className="ml-auto text-xs text-primary-600 border border-primary-200 rounded-lg px-2.5 py-1 hover:bg-primary-50">选这个</button>}
+              <button onClick={() => grant(u)} disabled={granting === u.id || grantFrame === ''}
+                className="ml-auto px-3 py-1.5 bg-amber-500 text-white rounded-lg text-xs font-medium hover:bg-amber-600 transition disabled:opacity-50">
+                {granting === u.id ? '发放中…' : '发放'}
+              </button>
             </div>
           ))}
+          {results.length === 0 && <div className="py-3 text-xs text-gray-400">搜索用户名后，点行内「发放」直接完成</div>}
         </div>
-        {target && (
-          <div className="p-4 border border-primary-100 bg-primary-50/40 rounded-xl flex flex-wrap items-end gap-3">
-            <div>
-              <label className="block text-xs text-gray-500 mb-1">头像框</label>
-              <select value={grantFrame} onChange={e => setGrantFrame(e.target.value ? parseInt(e.target.value) : '')} className="px-3 py-2 text-sm border border-gray-200 rounded-lg outline-none focus:border-primary-400">
-                <option value="">选择…</option>
-                {list.filter(f => f.enabled).map(f => <option key={f.id} value={f.id}>{f.name}</option>)}
-              </select>
-            </div>
-            <div>
-              <label className="block text-xs text-gray-500 mb-1">有效天数</label>
-              <input type="number" min="1" max="3650" value={grantDays} onChange={e => setGrantDays(e.target.value)} className="w-28 px-3 py-2 text-sm border border-gray-200 rounded-lg outline-none focus:border-primary-400" />
-            </div>
-            <button onClick={() => grant(target)} className="px-4 py-2 bg-amber-500 text-white rounded-lg text-sm font-medium hover:bg-amber-600 transition">确认发放</button>
-          </div>
-        )}
       </div>
     </div>
   );

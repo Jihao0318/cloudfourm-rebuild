@@ -42,6 +42,13 @@ function loadFrames(): Promise<AvatarFrameDef[]> {
   return framePromise;
 }
 
+// 后台增删改头像框后调用：清缓存并重新拉取，全站 Avatar 立即拿到新清单
+export function reloadAvatarFrames() {
+  framePromise = null;
+  frameCache = null;
+  return loadFrames();
+}
+
 // 订阅模块缓存的 hook：首个 Avatar 触发拉取，完成后全站重渲染
 function useAvatarFrames(): AvatarFrameDef[] | null {
   const [frames, setFrames] = useState<AvatarFrameDef[] | null>(frameCache);
