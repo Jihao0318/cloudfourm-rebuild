@@ -113,8 +113,12 @@ users.put('/nick-theme', requireAuth, async (c) => {
   if (!vipInfo || vipInfo.tier !== 'svip+') return c.json({ success: false, error: '仅 S VIP+ 会员可用' }, 403);
 
   const { theme } = await c.req.json();
+  // 预设主题 theme1-4 + 自定义渐变 `custom:RRGGBB,RRGGBB[,RRGGBB]`（2026-09-19 方案 A）
   const validThemes = ['theme1', 'theme2', 'theme3', 'theme4'];
-  if (!theme || !validThemes.includes(theme)) return c.json({ success: false, error: '无效的主题' }, 400);
+  const CUSTOM_THEME_RE = /^custom:[0-9a-fA-F]{6}(,[0-9a-fA-F]{6}){1,2}$/;
+  if (!theme || (!validThemes.includes(theme) && !CUSTOM_THEME_RE.test(theme))) {
+    return c.json({ success: false, error: '无效的主题' }, 400);
+  }
 
   await c.env.DB
     .prepare('UPDATE users SET nick_theme = ? WHERE id = ?')

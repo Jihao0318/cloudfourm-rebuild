@@ -790,25 +790,101 @@ auth.post('/email/resend', requireAuth, async (c) => {
 });
 
 // 修改用户名
+// 用户名实时占用检查（EditProfile 输入防抖调用；改名家自己占用算可用）
+auth.get('/username/check', requireAuth, async (c) => {
+  const user: JWTPayload | undefined = c.get('user');
+  if (!user) return c.json({ success: false, error: '请先登录' }, 401);
+  const name = (c.req.query('name') || '').trim();
+  const check = validateUsername(name);
+  if (!check.valid) return c.json({ success: true, data: { available: false, reason: check.error } });
+  const existing = await getUserByUsername(c.env.DB, name);
+  const available = !existing || existing.id === user.userId;
+  return c.json({ success: true, data: { available, reason: available ? '' : '该用户名已被使用' } });
+});
+
+// 修改用户名（统一端点，2026-09-19 方案）：
+//   距上次改名 ≥14 天（或从未改过）→ 免费改名；
+//   冷却期内 → 优先消耗仓库改名卡；没有卡且 auto_buy=true → 按商城现价一键购卡扣款。
+// username_changed_at 在每次成功改名时刷新（免费/用卡/购卡都算）。
+const RENAME_COOLDOWN_MS = 14 * 24 * 3600 * 1000;
+
 auth.put('/username', requireAuth, async (c) => {
   const user: JWTPayload | undefined = c.get('user');
   if (!user) return c.json({ success: false, error: '请先登录' }, 401);
-  const { username } = await c.req.json();
+  const { username, auto_buy } = await c.req.json();
 
   const check = validateUsername(username);
   if (!check.valid) return c.json({ success: false, error: check.error }, 400);
 
   const existing = await getUserByUsername(c.env.DB, username);
-  if (existing) return c.json({ success: false, error: '该用户名已被使用' }, 409);
+  if (existing && existing.id !== user.userId) return c.json({ success: false, error: '该用户名已被使用' }, 409);
 
-  await updateUser(c.env.DB, user.userId, { username });
+  const fullUser = await getUserById(c.env.DB, user.userId);
+  if (!fullUser) return c.json({ success: false, error: '用户不存在' }, 404);
 
-  // 发送站内通知
-  try {
-    await c.env.DB.prepare(
-      "INSERT INTO notifications (user_id, type, content) VALUES (?, 'system', ?)"
-    ).bind(user.userId, `用户名已修改为 ${username}`).run();
-  } catch (_) {}
+  // 冷却判断
+  let inCooldown = false;
+  if (fullUser.username_changed_at) {
+    const last = new Date(fullUser.username_changed_at.replace(' ', 'T') + 'Z').getTime();
+    inCooldown = Date.now() - last < RENAME_COOLDOWN_MS;
+  }
+
+  const stmts: D1PreparedStatement[] = [];
+  let usedCard = false;
+  let cost = 0;
+
+  if (inCooldown) {
+    // 优先消耗仓库改名卡
+    const card = await c.env.DB
+      .prepare('SELECT ui.id FROM user_items ui JOIN shop_items si ON ui.item_id = si.id WHERE ui.user_id = ? AND si.type = ? AND ui.used = 0 ORDER BY ui.id ASC LIMIT 1')
+      .bind(user.userId, 'rename_card')
+      .first<{ id: number }>();
+    if (card) {
+      stmts.push(c.env.DB.prepare('UPDATE user_items SET used = 1 WHERE id = ?').bind(card.id));
+      usedCard = true;
+    } else {
+      // 一键购卡：按商城现价（后台「商城物价」可调），余额 CAS 防并发超扣
+      if (!auto_buy) {
+        const cardItem = await c.env.DB
+          .prepare("SELECT price FROM shop_items WHERE type = 'rename_card' AND is_active = 1 ORDER BY id ASC LIMIT 1")
+          .first<{ price: number }>();
+        return c.json({
+          success: false,
+          error: '免费改名冷却中，需使用改名卡',
+          need_card: true,
+          card_price: cardItem?.price ?? 1000,
+        }, 400);
+      }
+      const cardItem = await c.env.DB
+        .prepare("SELECT price FROM shop_items WHERE type = 'rename_card' AND is_active = 1 ORDER BY id ASC LIMIT 1")
+        .first<{ price: number }>();
+      cost = cardItem?.price ?? 1000;
+      const bal = await c.env.DB
+        .prepare('SELECT coins FROM user_balances WHERE user_id = ?')
+        .bind(user.userId)
+        .first<{ coins: number }>();
+      if (!bal || bal.coins < cost) {
+        return c.json({ success: false, error: `积分不足，购买改名卡需要 ${cost} 积分` }, 400);
+      }
+      stmts.push(c.env.DB.prepare('UPDATE user_balances SET coins = coins - ?, total_spent = total_spent + ? WHERE user_id = ? AND coins >= ?').bind(cost, cost, user.userId, cost));
+    }
+  }
+
+  stmts.push(c.env.DB.prepare("UPDATE users SET username = ?, username_changed_at = datetime('now'), updated_at = datetime('now') WHERE id = ?").bind(username, user.userId));
+  if (cost > 0) {
+    stmts.push(c.env.DB.prepare("INSERT INTO coin_transactions (user_id, type, amount, balance_after, description) SELECT ?, 'shop', ?, coins, ? FROM user_balances WHERE user_id = ?")
+      .bind(user.userId, -cost, '购买改名卡并修改用户名', user.userId));
+  }
+  stmts.push(c.env.DB.prepare("INSERT INTO notifications (user_id, type, content) VALUES (?, 'system', ?)")
+    .bind(user.userId, usedCard ? `已使用改名卡，用户名修改为 ${username}` : cost > 0 ? `已购买改名卡（${cost} 积分），用户名修改为 ${username}` : `用户名已修改为 ${username}`));
+
+  const results = await c.env.DB.batch(stmts);
+  // 扣款 CAS 失败（并发把余额花掉了）→ 整批已提交但扣款未生效，回滚用户名并报错
+  if (cost > 0 && results[0].meta.changes === 0) {
+    await c.env.DB.prepare('UPDATE users SET username = ?, username_changed_at = ?, updated_at = datetime(\'now\') WHERE id = ?')
+      .bind(fullUser.username, fullUser.username_changed_at ?? null, user.userId).run();
+    return c.json({ success: false, error: '积分不足，购买改名卡失败' }, 400);
+  }
 
   // 签发新 JWT（username 变了；ver 用 DB 最新 token_version，不从旧 payload 复制）
   const dbUser = c.get('dbUser') as User | undefined;
@@ -817,7 +893,8 @@ auth.put('/username', requireAuth, async (c) => {
     c.env.JWT_SECRET
   );
 
-  return c.json({ success: true, message: '用户名已更新', token: newToken });
+  const msg = usedCard ? '已使用仓库改名卡，用户名已更新' : cost > 0 ? `已购买改名卡（${cost} 积分），用户名已更新` : '用户名已更新';
+  return c.json({ success: true, message: msg, token: newToken, used_card: usedCard, cost });
 });
 
 // 注销账户（3 天冷静期，先标记 scheduled_deleted_at）
@@ -912,6 +989,7 @@ async function buildUserPayload(
     title_badge_expires_at: fullUser.title_badge_expires_at || null,
     avatar_frame: fullUser.avatar_frame || null,
     avatar_frame_expires_at: fullUser.avatar_frame_expires_at || null,
+    username_changed_at: fullUser.username_changed_at ?? null,
     created_at: fullUser.created_at,
   };
 }

@@ -225,11 +225,16 @@ export const auth = {
     request<null>('/auth/email/resend', { method: 'POST' }),
 
 
-  changeUsername: (username: string) =>
-    request<null>('/auth/username', {
+  // 修改用户名（统一端点）：冷却期内 auto_buy=true 时优先消耗仓库改名卡、没有则按商城现价一键购卡
+  changeUsername: (username: string, auto_buy?: boolean) =>
+    request<{ message?: string; used_card?: boolean; cost?: number; need_card?: boolean; card_price?: number }>('/auth/username', {
       method: 'PUT',
-      body: JSON.stringify({ username }),
+      body: JSON.stringify({ username, auto_buy }),
     }),
+
+  // 用户名实时占用检查（输入防抖调用）
+  checkUsername: (name: string) =>
+    request<{ available: boolean; reason: string }>(`/auth/username/check?name=${encodeURIComponent(name)}`),
 
   deleteAccount: (password: string) =>
     request<null>('/auth/account', {

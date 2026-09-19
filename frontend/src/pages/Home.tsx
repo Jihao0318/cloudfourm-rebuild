@@ -10,7 +10,7 @@ import { formatRelativeTime, parseDate } from '../utils/date';
 import { levelFromExp } from '../utils/level';
 import { postBgClass } from '../utils/postBg';
 import Avatar from '../components/Avatar';
-import VIPBadge, { getVipNickClass } from '../components/VIPBadge';
+import VIPBadge, { getVipNickClass, getVipNickStyle } from '../components/VIPBadge';
 import { PostListSkeleton } from '../components/Skeleton';
 import EmptyState from '../components/EmptyState';
 import HomeSidebar from '../components/HomeSidebar';
@@ -397,6 +397,7 @@ export default function Home() {
                     {post.user_id ? (
                       <span
                         onClick={(e) => { e.stopPropagation(); navigate(`/user/${post.user_id}`); }}
+                        style={getVipNickStyle(post.author_vip_tier, post.author_nick_theme)}
                         className={`cursor-pointer font-semibold transition ${getVipNickClass(post.author_vip_tier, post.author_nick_theme) || 'text-gray-900 hover:text-primary-600'}`}
                       >
                         {post.username || '匿名'}

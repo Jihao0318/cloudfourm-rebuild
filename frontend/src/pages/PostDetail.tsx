@@ -20,7 +20,7 @@ import Zoom from 'yet-another-react-lightbox/plugins/zoom';
 import 'yet-another-react-lightbox/styles.css';
 import { Helmet } from 'react-helmet-async';
 import { useToast } from '../contexts/ToastContext';
-import VIPBadge, { getVipNickClass, getVipCommentClass } from '../components/VIPBadge';
+import VIPBadge, { getVipNickClass, getVipNickStyle, getVipCommentClass } from '../components/VIPBadge';
 import { PostDetailSkeleton } from '../components/Skeleton';
 import EmptyState from '../components/EmptyState';
 import ConfirmModal from '../components/ConfirmModal';
@@ -421,7 +421,7 @@ export default function PostDetail() {
               <Link to={`/user/${comment.user_id}`}
                 className={`${depth === 0 ? 'font-semibold text-sm' : 'text-sm font-medium'} transition ${
                   getVipNickClass(comment.author?.vip_tier, comment.author?.nick_theme) || 'text-gray-900 hover:text-primary-600'
-                }`}>
+                }`} style={getVipNickStyle(comment.author?.vip_tier, comment.author?.nick_theme)}>
                 {comment.author?.username || '匿名'}
               </Link>
               <VIPBadge vip_tier={comment.author?.vip_tier} />
@@ -601,7 +601,7 @@ export default function PostDetail() {
       <Avatar url={post.author?.avatar_url} username={post.author?.username} size="lg" frame={post.author?.avatar_frame} frameExpiresAt={post.author?.avatar_frame_expires_at} />
       <div>
         <div className="flex items-center gap-2 flex-wrap">
-          <h2 className={`font-bold transition ${getVipNickClass(post.author?.vip_tier, post.author?.nick_theme) || 'text-gray-900 group-hover:text-primary-600'}`}>{post.is_anonymous === 1 ? '匿名同学' : (post.author?.username || '匿名')}</h2>
+          <h2 style={getVipNickStyle(post.author?.vip_tier, post.author?.nick_theme)} className={`font-bold transition ${getVipNickClass(post.author?.vip_tier, post.author?.nick_theme) || 'text-gray-900 group-hover:text-primary-600'}`}>{post.is_anonymous === 1 ? '匿名同学' : (post.author?.username || '匿名')}</h2>
           {post.is_anonymous === 1 && <span className="text-[10px] bg-gray-100 text-gray-500 px-1.5 py-0.5 rounded font-medium">匿名</span>}
           <VIPBadge vip_tier={post.author?.vip_tier} />
           {authorLv && <span className="text-[10px] bg-violet-100 text-violet-700 px-1.5 py-0.5 rounded font-medium">Lv.{authorLv.level} {authorLv.tierName}</span>}

@@ -20,6 +20,7 @@ export interface User {
   title_badge_expires_at?: string | null;
   avatar_frame?: string | null;
   avatar_frame_expires_at?: string | null;
+  username_changed_at?: string | null;
 }
 
 export interface PublicUser {

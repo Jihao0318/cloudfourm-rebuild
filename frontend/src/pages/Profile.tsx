@@ -16,7 +16,7 @@ import Lightbox from 'yet-another-react-lightbox';
 import Zoom from 'yet-another-react-lightbox/plugins/zoom';
 import 'yet-another-react-lightbox/styles.css';
 import CropModal from '../components/CropModal';
-import VIPBadge, { getVipNickClass } from '../components/VIPBadge';
+import VIPBadge, { getVipNickClass, getVipNickStyle } from '../components/VIPBadge';
 import { ProfileSkeleton, PostListSkeleton } from '../components/Skeleton';
 import { faNewspaper, faBookmark } from '@fortawesome/free-solid-svg-icons';
 import EmptyState from '../components/EmptyState';
@@ -399,7 +399,7 @@ export default function Profile() {
             </div>
             <div className="flex-1 text-center sm:text-left">
               <div className="flex items-center justify-center sm:justify-start gap-2 flex-wrap">
-                <h1 className={`text-xl font-bold ${getVipNickClass(isOwnProfile ? currentUser?.vip_tier : profileUser.vip_tier, isOwnProfile ? myNickTheme : profileUser.nick_theme) || 'text-gray-900'}`}>{profileUser.username}</h1>
+                <h1 style={getVipNickStyle(isOwnProfile ? currentUser?.vip_tier : profileUser.vip_tier, isOwnProfile ? myNickTheme : profileUser.nick_theme)} className={`text-xl font-bold ${getVipNickClass(isOwnProfile ? currentUser?.vip_tier : profileUser.vip_tier, isOwnProfile ? myNickTheme : profileUser.nick_theme) || 'text-gray-900'}`}>{profileUser.username}</h1>
                 <VIPBadge vip_tier={profileUser.vip_tier} />
                 {profileUser.exp != null && <span className="text-[10px] bg-primary-50 text-primary-600 px-1.5 py-0.5 rounded font-medium">Lv.{levelFromExp(profileUser.exp).level} {levelFromExp(profileUser.exp).tierName}</span>}
                 {profileUser.title_badge && <span className="text-[10px] bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded font-medium">{profileUser.title_badge}</span>}

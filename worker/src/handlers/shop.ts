@@ -154,10 +154,10 @@ shop.post('/use-rename', requireAuth, async (c) => {
     .first();
   if (existing) return c.json({ success: false, error: '该用户名已被使用' }, 409);
 
-  // 标记改名卡已使用 + 更新用户名
+  // 标记改名卡已使用 + 更新用户名（username_changed_at 同步刷新：用卡改名也计入 14 天冷却起点）
   await c.env.DB.batch([
     c.env.DB.prepare('UPDATE user_items SET used = 1 WHERE id = ?').bind(renameCard.id),
-    c.env.DB.prepare("UPDATE users SET username = ?, updated_at = datetime('now') WHERE id = ?").bind(new_username, user.userId),
+    c.env.DB.prepare("UPDATE users SET username = ?, username_changed_at = datetime('now'), updated_at = datetime('now') WHERE id = ?").bind(new_username, user.userId),
   ]);
 
   // 签发新 JWT（用户名变了，旧 token 已失效；ver 用 DB 最新 token_version，不从旧 payload 复制）

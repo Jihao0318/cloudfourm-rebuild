@@ -1,3 +1,5 @@
+import type { CSSProperties } from 'react';
+
 interface VIPBadgeProps {
   vip_tier?: string | null;
   size?: 'sm' | 'md';
@@ -20,12 +22,29 @@ const NICK_THEMES: Record<string, string> = {
 
 export function getVipNickClass(vip_tier?: string | null, nick_theme?: string | null): string {
   if (!vip_tier) return '';
+  // 自定义渐变不走 CSS class，由 getVipNickStyle 返回 inline style
+  if (vip_tier === 'svip+' && nick_theme?.startsWith('custom:')) return '';
   if (vip_tier === 's-vip') return 'vip-nick-s-vip';
   if (vip_tier === 'svip+') {
     const theme = (nick_theme && NICK_THEMES[nick_theme]) ? NICK_THEMES[nick_theme] : 'vip-nick-svip+-theme1';
     return `vip-nick-svip+ ${theme}`;
   }
   return '';
+}
+
+// 自定义渐变（nick_theme = custom:RRGGBB,RRGGBB[,RRGGBB]，仅 SVIP+）→ 昵称 inline style；
+// 预设主题走 CSS class，此函数返回空对象。渐变文字 = background-clip: text + 透明填充。
+export function getVipNickStyle(vip_tier?: string | null, nick_theme?: string | null): CSSProperties {
+  if (!vip_tier || vip_tier !== 'svip+' || !nick_theme?.startsWith('custom:')) return {};
+  const stops = nick_theme.slice(7).split(',').filter(h => /^[0-9a-fA-F]{6}$/.test(h));
+  if (stops.length < 2) return {};
+  return {
+    backgroundImage: `linear-gradient(90deg, #${stops.map(s => s.toUpperCase()).join(', #')})`,
+    WebkitBackgroundClip: 'text',
+    backgroundClip: 'text',
+    color: 'transparent',
+    WebkitTextFillColor: 'transparent',
+  } as CSSProperties;
 }
 
 export function getVipCommentClass(vip_tier?: string | null): string {
