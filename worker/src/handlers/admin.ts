@@ -167,6 +167,98 @@ admin.put('/settings', async (c) => {
   return c.json({ success: true, message: '设置已更新' });
 });
 
+// ===== 头像框管理（图片直链 + 滑杆调参版）=====
+// scale = 框图宽 / 头像容器宽；offset_x/y = 框中心相对容器中心的偏移（% 容器尺寸）。渲染端见 Avatar.tsx。
+
+// 全量列表（含未上架）
+admin.get('/avatar-frames', async (c) => {
+  const rows = await c.env.DB.prepare('SELECT * FROM avatar_frames ORDER BY id ASC').all();
+  return c.json({ success: true, data: rows.results || [] });
+});
+
+// 新增（图片直链）
+admin.post('/avatar-frames', async (c) => {
+  const b = await c.req.json();
+  const name = String(b?.name || '').trim();
+  const url = String(b?.image_url || '').trim();
+  if (!name || !/^https:\/\//.test(url)) return c.json({ success: false, error: '名称与 https 图片直链必填' }, 400);
+  const clamp = (v: unknown, lo: number, hi: number, d: number) => {
+    const n = parseFloat(String(v));
+    return Number.isFinite(n) ? Math.min(hi, Math.max(lo, n)) : d;
+  };
+  const r = await c.env.DB.prepare(
+    'INSERT INTO avatar_frames (name, image_url, scale, offset_x, offset_y) VALUES (?, ?, ?, ?, ?)'
+  ).bind(name, url, clamp(b?.scale, 1, 4, 1.5), clamp(b?.offset_x, -100, 100, 0), clamp(b?.offset_y, -100, 100, 0)).run();
+  return c.json({ success: r.meta.changes > 0, id: r.meta.last_row_id, message: '头像框已添加' });
+});
+
+// 更新（调参/改名/上下架）
+admin.put('/avatar-frames/:id', async (c) => {
+  const id = parseInt(c.req.param('id'));
+  if (!Number.isFinite(id)) return c.json({ success: false, error: '无效的 ID' }, 400);
+  const b = await c.req.json();
+  const sets: string[] = [];
+  const binds: unknown[] = [];
+  if (b?.name !== undefined) { sets.push('name = ?'); binds.push(String(b.name).trim()); }
+  if (b?.image_url !== undefined) {
+    const url = String(b.image_url).trim();
+    if (!/^https:\/\//.test(url)) return c.json({ success: false, error: '图片直链必须为 https' }, 400);
+    sets.push('image_url = ?'); binds.push(url);
+  }
+  if (b?.scale !== undefined) { sets.push('scale = ?'); binds.push(Math.min(4, Math.max(1, parseFloat(b.scale) || 1.5))); }
+  if (b?.offset_x !== undefined) { sets.push('offset_x = ?'); binds.push(Math.min(100, Math.max(-100, parseFloat(b.offset_x) || 0))); }
+  if (b?.offset_y !== undefined) { sets.push('offset_y = ?'); binds.push(Math.min(100, Math.max(-100, parseFloat(b.offset_y) || 0))); }
+  if (b?.enabled !== undefined) { sets.push('enabled = ?'); binds.push(b.enabled ? 1 : 0); }
+  if (sets.length === 0) return c.json({ success: false, error: '没有要更新的字段' }, 400);
+  binds.push(id);
+  const r = await c.env.DB.prepare(`UPDATE avatar_frames SET ${sets.join(', ')} WHERE id = ?`).bind(...binds).run();
+  return c.json({ success: r.meta.changes > 0, message: '已保存' });
+});
+
+// 删除（同时摘除佩戴中用户的该框）
+admin.delete('/avatar-frames/:id', async (c) => {
+  const id = parseInt(c.req.param('id'));
+  if (!Number.isFinite(id)) return c.json({ success: false, error: '无效的 ID' }, 400);
+  await c.env.DB.batch([
+    c.env.DB.prepare('DELETE FROM avatar_frames WHERE id = ?').bind(id),
+    c.env.DB.prepare("UPDATE users SET avatar_frame = NULL, avatar_frame_expires_at = NULL WHERE avatar_frame = ?").bind(String(id)),
+  ]);
+  return c.json({ success: true, message: '已删除' });
+});
+
+// ===== 发放头像框（管理后台给予；暂不上架商城）=====
+// frame = avatar_frames 表的 id；同框从现有到期时间续期叠加，异框从现在起算（替换）。
+admin.post('/users/:id/avatar-frame', async (c) => {
+  const id = parseInt(c.req.param('id'));
+  if (!Number.isFinite(id)) return c.json({ success: false, error: '无效的用户' }, 400);
+  const b = await c.req.json();
+  const frameId = parseInt(b?.frame);
+  if (!Number.isFinite(frameId)) return c.json({ success: false, error: '无效的头像框' }, 400);
+  const frameRow = await c.env.DB
+    .prepare('SELECT id, name FROM avatar_frames WHERE id = ? AND enabled = 1')
+    .bind(frameId)
+    .first<{ id: number; name: string }>();
+  if (!frameRow) return c.json({ success: false, error: '头像框不存在或未上架' }, 400);
+  const days = Math.max(1, Math.min(3650, parseInt(b?.days) || 30));
+
+  const row = await c.env.DB
+    .prepare('SELECT avatar_frame, avatar_frame_expires_at FROM users WHERE id = ? AND deleted_at IS NULL')
+    .bind(id)
+    .first<{ avatar_frame: string | null; avatar_frame_expires_at: string | null }>();
+  if (!row) return c.json({ success: false, error: '用户不存在' }, 404);
+
+  const now = new Date().toISOString().replace('T', ' ').slice(0, 19);
+  const same = row.avatar_frame === String(frameId);
+  const base = same && row.avatar_frame_expires_at && row.avatar_frame_expires_at > now
+    ? row.avatar_frame_expires_at
+    : now;
+  await c.env.DB
+    .prepare("UPDATE users SET avatar_frame = ?, avatar_frame_expires_at = datetime(?, '+' || ? || ' days') WHERE id = ?")
+    .bind(String(frameId), base, days, id)
+    .run();
+  return c.json({ success: true, message: `已发放「${frameRow.name}」${days} 天${same ? '（同框续期叠加）' : ''}` });
+});
+
 // ===== 封禁用户 =====
 admin.put('/users/:id/ban', async (c) => {
   try {

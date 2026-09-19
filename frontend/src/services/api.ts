@@ -521,6 +521,23 @@ export const admin = {
       body: JSON.stringify({ username }),
     }),
 
+  // ── 头像框（管理后台直链添加 + 滑杆调参）──
+  listAvatarFrames: () =>
+    request<{ id: number; name: string; image_url: string; scale: number; offset_x: number; offset_y: number; enabled: number }[]>('/admin/avatar-frames'),
+  createAvatarFrame: (data: { name: string; image_url: string; scale: number; offset_x: number; offset_y: number }) =>
+    request<{ id: number; message: string }>('/admin/avatar-frames', { method: 'POST', body: JSON.stringify(data) }),
+  updateAvatarFrame: (id: number, data: Record<string, unknown>) =>
+    request<{ message: string }>(`/admin/avatar-frames/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
+  deleteAvatarFrame: (id: number) =>
+    request<{ message: string }>(`/admin/avatar-frames/${id}`, { method: 'DELETE' }),
+
+  // 发放头像框（frame = avatar_frames.id；同框续期叠加，异框替换）
+  grantAvatarFrame: (userId: number, frameId: number, days: number) =>
+    request<{ message: string }>(`/admin/users/${userId}/avatar-frame`, {
+      method: 'POST',
+      body: JSON.stringify({ frame: frameId, days }),
+    }),
+
   // 删除用户（三次确认）
   deleteUser: (userId: number, confirm: number) =>
     request<null>(`/admin/users/${userId}`, {
@@ -784,6 +801,11 @@ export const lotteryCoins = {
 export const exchange = {
   offers: () => request<any[]>('/exchange/offers'),
   buy: (id: number) => request<{ message: string }>(`/exchange/buy/${id}`, { method: 'POST' }),
+};
+
+// 公开头像框列表（Avatar 组件渲染用，无需登录）
+export const avatarFramesApi = {
+  list: () => request<{ id: number; name: string; image_url: string; scale: number; offset_x: number; offset_y: number }[]>('/avatar-frames'),
 };
 
 export const leaderboardApi = {

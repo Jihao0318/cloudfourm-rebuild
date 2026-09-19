@@ -1,4 +1,10 @@
-// 通用头像组件 — 支持头像框样式（过期自动隐藏）
+// 通用头像组件 — 支持头像框（过期自动隐藏）
+// 头像框 = 管理后台添加的透明 PNG（图片直链），DB 表 avatar_frames（scale/offset 滑杆调参）。
+// 渲染模型：头像填满容器，框图叠在上层 —— left/top = 容器中心 + offset，
+// width = scale × 容器宽，translate(-50%,-50%) 居中；装饰超出/遮挡头像属于设计效果。
+import { useState, useEffect } from 'react';
+import { avatarFramesApi } from '../services/api';
+
 interface AvatarProps {
   url?: string | null;
   username?: string | null;
@@ -14,30 +20,50 @@ const sizeMap = {
   lg: 'w-14 h-14 text-xl',
 };
 
-// 头像框定义：className = CSS 边框样式（拼到头像元素上）；img = 透明底图片边框（叠加渲染，见 assets/frames/README.md）
-// 【后续接入图片型头像框的步骤】
-// 1. 图片放 src/assets/frames/frame-{英文名}.png：512×512 透明 PNG，内孔直径 = 画布 80% 最佳（规范见 README）；
-// 2. 顶部用 import 引入图片（必须 import，不能写字符串相对路径——Vite 不处理运行时字符串路径会 404）；
-// 3. FRAME_STYLES 新增条目 { img: frameXxx, scale }，scale = 100 / 内孔占画布比例（内孔 80% → 1.25），
-//    使头像恰好填满内孔、环带套在头像外圈；图片资源删除/换图后此条目同步处理。
-interface FrameDef {
-  className?: string;
-  img?: string;
-  scale?: number; // 图片框渲染缩放倍数（= 100 / 内孔占画布比例），默认 1.25
+export interface AvatarFrameDef {
+  id: number;
+  name: string;
+  image_url: string;
+  scale: number;
+  offset_x: number;
+  offset_y: number;
 }
 
-const FRAME_STYLES: Record<string, FrameDef> = {
-  default: { className: 'ring-2 ring-purple-400 shadow-lg shadow-purple-200' },
-};
+// 模块级缓存：全站头像共用一次拉取；后台改框后刷新页面生效
+let frameCache: AvatarFrameDef[] | null = null;
+let framePromise: Promise<AvatarFrameDef[]> | null = null;
+const frameListeners = new Set<() => void>();
+
+function loadFrames(): Promise<AvatarFrameDef[]> {
+  if (framePromise) return framePromise;
+  framePromise = avatarFramesApi.list()
+    .then(r => { frameCache = r.success && r.data ? r.data : []; frameListeners.forEach(l => l()); return frameCache; })
+    .catch(() => { frameCache = []; frameListeners.forEach(l => l()); return frameCache; });
+  return framePromise;
+}
+
+// 订阅模块缓存的 hook：首个 Avatar 触发拉取，完成后全站重渲染
+function useAvatarFrames(): AvatarFrameDef[] | null {
+  const [frames, setFrames] = useState<AvatarFrameDef[] | null>(frameCache);
+  useEffect(() => {
+    if (frameCache) { setFrames(frameCache); return; }
+    const l = () => setFrames(frameCache);
+    frameListeners.add(l);
+    loadFrames();
+    return () => { frameListeners.delete(l); };
+  }, []);
+  return frames;
+}
 
 export default function Avatar({ url, username, size = 'md', className = '', frame, frameExpiresAt }: AvatarProps) {
   const sizeClass = sizeMap[size];
+  const frames = useAvatarFrames();
 
   // 头像框过期检查
   const frameValid = frame && (!frameExpiresAt || new Date(frameExpiresAt) > new Date());
-  const frameDef = frameValid ? FRAME_STYLES[frame!] : undefined;
-  // 未知 frame 值兜底 amber ring（CSS 类）；图片型只叠加图片，不额外加 ring
-  const frameClass = frameValid && !frameDef?.img ? (frameDef?.className || 'ring-2 ring-amber-400') : '';
+  const frameDef = frameValid && frames ? frames.find(f => String(f.id) === String(frame)) : undefined;
+  // CSS 兜底：无匹配图片框时的 ring（含历史 default 值）
+  const frameClass = frameValid && !frameDef ? 'ring-2 ring-amber-400' : '';
 
   const img = url ? (
     <img
@@ -52,18 +78,19 @@ export default function Avatar({ url, username, size = 'md', className = '', fra
     </div>
   );
 
-  // 图片型头像框渲染（当前 FRAME_STYLES 无图片型条目，此分支为预留）：
-  // - 容器必须承载全部尺寸类（sizeClass + className）——调用方若传响应式尺寸类（如 Profile 的
-  //   w-20 h-20 md:w-24 md:h-24），需同时拼到容器上，否则头像会溢出容器（历史 bug 根因）；
-  // - 头像层/字母层 w-full h-full 填满容器；边框图 absolute inset-0 + transform: scale(scale)
-  //   等比外扩（不改变布局盒），环带自然套在头像外圈；
-  // - 已知坑：① 不要用 CSS border-image（与 border-radius 不兼容，圆形场景必错位）；
-  //   ② 边框 img 不加 rounded-full / object-cover（透明 PNG 自带形状）。
-  if (frameValid && frameDef?.img) {
+  // 图片型头像框：框图按 scale/offset 叠加在头像上层（不改变布局盒，超容部分可见）
+  if (frameValid && frameDef) {
     return (
       <div className={`relative ${sizeClass} flex-shrink-0`}>
         {img}
-        <img src={frameDef.img} alt="" aria-hidden className="absolute inset-0 w-full h-full pointer-events-none" />
+        <img src={frameDef.image_url} alt="" aria-hidden
+          className="absolute pointer-events-none max-w-none"
+          style={{
+            left: `calc(50% + ${frameDef.offset_x}%)`,
+            top: `calc(50% + ${frameDef.offset_y}%)`,
+            width: `${frameDef.scale * 100}%`,
+            transform: 'translate(-50%, -50%)',
+          }} />
       </div>
     );
   }

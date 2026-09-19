@@ -277,6 +277,222 @@ const VALUE_HINTS: Record<string, string> = {
 };
 
 // =====================================================================
+// 头像框管理：图片直链添加 + 滑杆调参（缩放/水平/垂直）实时预览，发放给用户
+// 渲染模型：头像填满容器；框图 width=scale×容器宽，中心 = 容器中心 + (offset_x, offset_y)%，
+// translate(-50%,-50%) 居中叠加在头像上层——装饰遮挡头像属于设计效果。
+// =====================================================================
+function FramePreview({ url, scale, ox, oy, size = 96, ring }: { url: string; scale: number; ox: number; oy: number; size?: number; ring?: boolean }) {
+  return (
+    <div className="relative flex-shrink-0 rounded-full bg-primary-100 flex items-center justify-center text-primary-600 font-bold overflow-visible"
+      style={{ width: size, height: size, fontSize: size / 3 }}>
+      <span>预览</span>
+      {url && <img src={url} alt="" aria-hidden
+        className="absolute pointer-events-none max-w-none"
+        style={{ left: `calc(50% + ${ox}%)`, top: `calc(50% + ${oy}%)`, width: `${scale * 100}%`, transform: 'translate(-50%, -50%)' }} />}
+      {ring && <span className="absolute inset-0 rounded-full border-2 border-dashed border-red-400/70 pointer-events-none" />}
+    </div>
+  );
+}
+
+function FrameSliders({ scale, ox, oy, onChange }: { scale: number; ox: number; oy: number; onChange: (v: { scale: number; ox: number; oy: number }) => void }) {
+  const row = 'flex items-center gap-2';
+  const bar = 'flex-1 accent-primary-600';
+  return (
+    <div className="space-y-1.5 text-xs text-gray-500">
+      <div className={row}><span className="w-14 shrink-0">缩放</span>
+        <input type="range" min={100} max={400} step={1} value={Math.round(scale * 100)} onChange={e => onChange({ scale: parseInt(e.target.value) / 100, ox, oy })} className={bar} />
+        <span className="w-12 text-right tabular-nums">{Math.round(scale * 100)}%</span></div>
+      <div className={row}><span className="w-14 shrink-0">左右</span>
+        <input type="range" min={-100} max={100} step={1} value={Math.round(ox)} onChange={e => onChange({ scale, ox: parseInt(e.target.value), oy })} className={bar} />
+        <span className="w-12 text-right tabular-nums">{Math.round(ox)}</span></div>
+      <div className={row}><span className="w-14 shrink-0">上下</span>
+        <input type="range" min={-100} max={100} step={1} value={Math.round(oy)} onChange={e => onChange({ scale, ox, oy: parseInt(e.target.value) })} className={bar} />
+        <span className="w-12 text-right tabular-nums">{Math.round(oy)}</span></div>
+    </div>
+  );
+}
+
+function FrameAdminPanel() {
+  const [list, setList] = useState<any[]>([]);
+  const [msg, setMsg] = useState('');
+  // 新建表单
+  const [nName, setNName] = useState('');
+  const [nUrl, setNUrl] = useState('');
+  const [nScale, setNScale] = useState(1.5);
+  const [nOx, setNOx] = useState(0);
+  const [nOy, setNOy] = useState(0);
+  // 编辑中（id → 草稿值）
+  const [edits, setEdits] = useState<Record<number, { scale: number; ox: number; oy: number }>>({});
+  const [saving, setSaving] = useState<string>('');
+  // 发放
+  const [search, setSearch] = useState('');
+  const [results, setResults] = useState<any[]>([]);
+  const [target, setTarget] = useState<any>(null);
+  const [grantFrame, setGrantFrame] = useState<number | ''>('');
+  const [grantDays, setGrantDays] = useState('30');
+
+  const load = async () => {
+    try { const r = await adminApi.listAvatarFrames(); if (r.success) setList(r.data || []); }
+    catch (e: any) { setMsg(e.message); }
+  };
+  useEffect(() => { load(); }, []);
+
+  const draftOf = (f: any) => edits[f.id] || { scale: f.scale, ox: f.offset_x, oy: f.offset_y };
+
+  const add = async () => {
+    if (!nName.trim() || !/^https:\/\//.test(nUrl.trim())) { setMsg('名称必填，图片直链需 https:// 开头'); return; }
+    setSaving('new');
+    try {
+      const r = await adminApi.createAvatarFrame({ name: nName.trim(), image_url: nUrl.trim(), scale: nScale, offset_x: nOx, offset_y: nOy });
+      if (r.success) { setMsg('已添加'); setNName(''); setNUrl(''); load(); }
+      else setMsg(r.error || '添加失败');
+    } catch (e: any) { setMsg(e.message); }
+    setSaving('');
+  };
+
+  const saveOne = async (f: any) => {
+    const d = draftOf(f);
+    setSaving(String(f.id));
+    try {
+      const r = await adminApi.updateAvatarFrame(f.id, d);
+      if (r.success) { setMsg(`「${f.name}」已保存`); const e2 = { ...edits }; delete e2[f.id]; setEdits(e2); load(); }
+      else setMsg(r.error || '保存失败');
+    } catch (e: any) { setMsg(e.message); }
+    setSaving('');
+  };
+
+  const toggleEnabled = async (f: any) => {
+    setSaving(String(f.id));
+    try { const r = await adminApi.updateAvatarFrame(f.id, { enabled: f.enabled ? 0 : 1 }); if (r.success) { setMsg(f.enabled ? '已下架' : '已上架'); load(); } else setMsg(r.error || '操作失败'); }
+    catch (e: any) { setMsg(e.message); }
+    setSaving('');
+  };
+
+  const del = async (f: any) => {
+    if (!window.confirm(`删除「${f.name}」？佩戴中的用户会自动摘除`)) return;
+    try { const r = await adminApi.deleteAvatarFrame(f.id); if (r.success) { setMsg('已删除'); load(); } else setMsg(r.error || '删除失败'); }
+    catch (e: any) { setMsg(e.message); }
+  };
+
+  const doSearch = async () => {
+    if (!search.trim()) return;
+    try { const r = await (adminApi as any).searchUsers(search.trim()); if (r.success) setResults(r.data || []); else setMsg(r.error); }
+    catch (e: any) { setMsg(e.message); }
+  };
+
+  const grant = async (u: any) => {
+    if (grantFrame === '') { setMsg('先选择头像框'); return; }
+    try {
+      const r = await adminApi.grantAvatarFrame(u.id, Number(grantFrame), parseInt(grantDays) || 30);
+      if (r.success) setMsg(r.message || '已发放'); else setMsg(r.error || '发放失败');
+    } catch (e: any) { setMsg(e.message); }
+  };
+
+  const inputCls2 = 'w-full px-3 py-2 text-sm border border-gray-200 rounded-lg outline-none focus:border-primary-400';
+
+  return (
+    <div className="space-y-5">
+      <Msg msg={msg} onClose={() => setMsg('')} />
+
+      {/* 添加新框 */}
+      <div className="bg-white rounded-xl border p-4 md:p-6">
+        <h3 className="font-bold mb-1">➕ 添加头像框</h3>
+        <p className="text-xs text-gray-400 mb-4">贴入透明 PNG 的图片直链（https），拖滑杆让环带对准预览头像，保存后可发放</p>
+        <div className="flex flex-col md:flex-row gap-5">
+          <FramePreview url={nUrl.trim()} scale={nScale} ox={nOx} oy={nOy} size={110} ring />
+          <div className="flex-1 space-y-2.5">
+            <input value={nName} onChange={e => setNName(e.target.value)} placeholder="框名称（如：霜雪誓约）" className={inputCls2} />
+            <input value={nUrl} onChange={e => setNUrl(e.target.value)} placeholder="https:// 图片直链（透明 PNG）" className={inputCls2} />
+            <FrameSliders scale={nScale} ox={nOx} oy={nOy} onChange={v => { setNScale(v.scale); setNOx(v.ox); setNOy(v.oy); }} />
+            <button onClick={add} disabled={saving === 'new'}
+              className="px-4 py-2 bg-primary-600 text-white rounded-lg text-sm font-medium hover:bg-primary-700 transition disabled:opacity-50">
+              {saving === 'new' ? '添加中…' : '保存并上架'}
+            </button>
+          </div>
+        </div>
+      </div>
+
+      {/* 已有框列表 */}
+      <div className="space-y-4">
+        <h3 className="font-bold px-1">🖼️ 已有头像框（{list.length}）</h3>
+        {list.map(f => {
+          const d = draftOf(f);
+          const dirty = d.scale !== f.scale || d.ox !== f.offset_x || d.oy !== f.offset_y;
+          return (
+            <div key={f.id} className="bg-white rounded-xl border p-4 flex flex-col md:flex-row gap-5">
+              <FramePreview url={f.image_url} scale={d.scale} ox={d.ox} oy={d.oy} size={110} ring />
+              <div className="flex-1 min-w-0 space-y-2">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <span className="font-medium text-gray-900">{f.name}</span>
+                  <span className="text-[11px] text-gray-400">#{f.id}</span>
+                  {f.enabled ? <span className="text-[10px] bg-green-50 text-green-600 px-1.5 py-0.5 rounded">上架中</span>
+                    : <span className="text-[10px] bg-gray-100 text-gray-400 px-1.5 py-0.5 rounded">已下架</span>}
+                  {dirty && <span className="text-[10px] text-amber-600 font-medium">未保存</span>}
+                </div>
+                <div className="text-[11px] text-gray-400 break-all">{f.image_url}</div>
+                <FrameSliders scale={d.scale} ox={d.ox} oy={d.oy} onChange={v => setEdits({ ...edits, [f.id]: v })} />
+              </div>
+              <div className="flex md:flex-col gap-2 md:justify-center">
+                <button onClick={() => saveOne(f)} disabled={saving === String(f.id)}
+                  className={`text-xs rounded-lg px-3 py-1.5 transition ${dirty ? 'bg-primary-600 text-white hover:bg-primary-700 font-medium' : 'text-primary-600 border border-primary-200 hover:bg-primary-50'}`}>
+                  保存
+                </button>
+                <button onClick={() => toggleEnabled(f)} disabled={saving === String(f.id)}
+                  className="text-xs text-gray-600 border border-gray-200 rounded-lg px-3 py-1.5 hover:bg-gray-50 transition">
+                  {f.enabled ? '下架' : '上架'}
+                </button>
+                <button onClick={() => del(f)}
+                  className="text-xs text-red-500 border border-red-200 rounded-lg px-3 py-1.5 hover:bg-red-50 transition">
+                  删除
+                </button>
+              </div>
+            </div>
+          );
+        })}
+        {list.length === 0 && <div className="bg-white rounded-xl border p-6 text-center text-gray-400 text-sm">还没有头像框，先在上面添加</div>}
+      </div>
+
+      {/* 发放 */}
+      <div className="bg-white rounded-xl border p-4 md:p-6">
+        <h3 className="font-bold mb-1">🎁 发放给用户</h3>
+        <p className="text-xs text-gray-400 mb-4">同框重复发放自动续期叠加，异框替换并从今天重新起算；仅可发放「上架中」的框</p>
+        <div className="flex flex-wrap gap-2 mb-3">
+          <input value={search} onChange={e => setSearch(e.target.value)} onKeyDown={e => e.key === 'Enter' && doSearch()}
+            placeholder="输入用户名搜索" className="w-56 px-3 py-2 text-sm border border-gray-200 rounded-lg outline-none focus:border-primary-400" />
+          <button onClick={doSearch} className="px-4 py-2 bg-gray-100 rounded-lg text-sm hover:bg-gray-200 transition">搜索</button>
+        </div>
+        <div className="divide-y mb-3">
+          {results.map(u => (
+            <div key={u.id} className="py-2 flex items-center gap-3 text-sm">
+              <span className="font-medium text-gray-700">{u.username}</span>
+              <span className="text-xs text-gray-400">#{u.id}</span>
+              {target?.id === u.id ? <span className="text-[11px] text-primary-600">已选中 ↓</span>
+                : <button onClick={() => setTarget(u)} className="ml-auto text-xs text-primary-600 border border-primary-200 rounded-lg px-2.5 py-1 hover:bg-primary-50">选这个</button>}
+            </div>
+          ))}
+        </div>
+        {target && (
+          <div className="p-4 border border-primary-100 bg-primary-50/40 rounded-xl flex flex-wrap items-end gap-3">
+            <div>
+              <label className="block text-xs text-gray-500 mb-1">头像框</label>
+              <select value={grantFrame} onChange={e => setGrantFrame(e.target.value ? parseInt(e.target.value) : '')} className="px-3 py-2 text-sm border border-gray-200 rounded-lg outline-none focus:border-primary-400">
+                <option value="">选择…</option>
+                {list.filter(f => f.enabled).map(f => <option key={f.id} value={f.id}>{f.name}</option>)}
+              </select>
+            </div>
+            <div>
+              <label className="block text-xs text-gray-500 mb-1">有效天数</label>
+              <input type="number" min="1" max="3650" value={grantDays} onChange={e => setGrantDays(e.target.value)} className="w-28 px-3 py-2 text-sm border border-gray-200 rounded-lg outline-none focus:border-primary-400" />
+            </div>
+            <button onClick={() => grant(target)} className="px-4 py-2 bg-amber-500 text-white rounded-lg text-sm font-medium hover:bg-amber-600 transition">确认发放</button>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// =====================================================================
 // 商城物价：双表商品（shop_items 经典区 / shop_extras 卡类）调价 + 上下架
 // =====================================================================
 const SHOP_TYPE_LABELS: Record<string, string> = {
@@ -1150,7 +1366,7 @@ function VipPanel() {
 // =====================================================================
 export type AdminMenuId =
   | 'stats' | 'users' | 'unban' | 'posts' | 'comments' | 'pinned' | 'reports'
-  | 'boards' | 'coins' | 'vips' | 'lottery' | 'settings' | 'announcement' | 'invites' | 'sec_logs' | 'patrol' | 'exchange' | 'shop';
+  | 'boards' | 'coins' | 'vips' | 'lottery' | 'settings' | 'announcement' | 'invites' | 'sec_logs' | 'patrol' | 'exchange' | 'shop' | 'frames';
 
 const MENU: { section: string; items: { id: AdminMenuId; label: string; icon: string }[] }[] = [
   { section: '', items: [{ id: 'stats', label: '概览', icon: '📊' }] },
@@ -1163,6 +1379,7 @@ const MENU: { section: string; items: { id: AdminMenuId; label: string; icon: st
       { id: 'reports', label: '举报审核', icon: '🚩' },
       { id: 'exchange', label: '限时兑换', icon: '⏳' },
       { id: 'shop', label: '商城物价', icon: '🏪' },
+      { id: 'frames', label: '头像框管理', icon: '🖼️' },
       { id: 'boards', label: '板块管理', icon: '🗂️' },
     ],
   },
@@ -1226,6 +1443,7 @@ export default function Admin() {
       case 'lottery': return <LotteryPanel />;
       case 'exchange': return <ExchangeAdminPanel />;
       case 'shop': return <ShopPricePanel />;
+      case 'frames': return <FrameAdminPanel />;
       case 'users': return <UsersPanel />;
       case 'vips': return <VipPanel />;
       case 'posts': return <PostsPanel />;

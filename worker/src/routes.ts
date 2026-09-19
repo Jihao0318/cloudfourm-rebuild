@@ -31,6 +31,7 @@ import lotteryCoinsHandler from './handlers/lottery-coins';
 import leaderboardHandler from './handlers/leaderboard';
 import exchangeHandler from './handlers/exchange';
 import unbanHandler from './handlers/unban';
+import avatarFramesHandler from './handlers/avatar-frames';
 import itemsHandler from './handlers/items';
 import pushHandler from './handlers/push';
 import tasksHandler from './handlers/tasks';
@@ -206,6 +207,7 @@ export function setupRoutes(app: Hono<{ Bindings: Env }>) {
   // 自赎 + 管理审核 — 需登录
   app.use('/api/unban*', requireAuth);
   app.route('/api/unban', unbanHandler);
+  app.route('/api/avatar-frames', avatarFramesHandler);
 
   // 道具系统 — 需登录
   app.use('/api/items*', requireAuth);
