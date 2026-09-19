@@ -261,6 +261,14 @@ const PRIZE_TYPE_LABELS: Record<string, string> = {
   fortune: '今日运势', avatar_frame: '头像框', title_badge: '称号', rainbow_title: '炫彩标题', announce: '全服公告',
 };
 const RARITY_LABELS: Record<string, string> = { N: 'N · 普通', R: 'R · 蓝色', SR: 'SR · 紫色', SSR: 'SSR · 金色' };
+
+// 奖池分组的稀有度视觉（徽章 + 渐变头部，金紫蓝灰对应四档）
+const RARITY_STYLE: Record<string, { badge: string; header: string }> = {
+  SSR: { badge: 'bg-gradient-to-r from-amber-400 to-yellow-500 text-white shadow-sm', header: 'from-amber-50 to-yellow-50 border-amber-200' },
+  SR: { badge: 'bg-purple-500 text-white shadow-sm', header: 'from-purple-50 to-fuchsia-50 border-purple-200' },
+  R: { badge: 'bg-blue-500 text-white shadow-sm', header: 'from-blue-50 to-sky-50 border-blue-200' },
+  N: { badge: 'bg-gray-400 text-white shadow-sm', header: 'from-gray-50 to-slate-50 border-gray-200' },
+};
 // 值列的填写提示（部分类型的值固定为 1）
 const VALUE_HINTS: Record<string, string> = {
   coins: '积分数量，如 350', rename: '改名卡张数，如 1', vip: '格式 档位:天数，如 vip:1、s-vip:3',
@@ -513,6 +521,8 @@ function LotteryPanel() {
   const [config, setConfig] = useState<Record<string, string>>({ ...CFG_DEFAULTS });
   const [edits, setEdits] = useState<Record<string, any>>({});
   const { confirm: confirmModal, el: confirmEl } = useConfirmModal();
+  // 正在「添加奖品」的稀有度分组（null = 无）
+  const [addingRarity, setAddingRarity] = useState<string | null>(null);
 
   const load = async () => {
     try {
@@ -543,16 +553,34 @@ function LotteryPanel() {
   const savePrize = async (id: number | 'new') => {
     const row = edits[id];
     if (!row) return;
+    if (!String(row.name || '').trim()) { setMsg('奖品名称不能为空'); return false; }
+    if (row.type === 'coins' && !(parseInt(row.value) > 0)) { setMsg('积分类奖品的数值必须是正整数（如 350）'); return false; }
+    if (row.type === 'vip' && !/^(vip|s-vip|svip\+):[1-9]\d*$/.test(String(row.value || ''))) { setMsg('VIP 卡数值格式应为 档位:天数，如 vip:1、s-vip:3'); return false; }
     try {
-      if (id === 'new') { const r = await (adminApi as any).createLotteryPrize(row); if (r.success) { setMsg('奖品已添加'); load(); } }
-      else { const r = await (adminApi as any).updateLotteryPrize(id, row); if (r.success) { setMsg('奖品已更新'); load(); } }
+      if (id === 'new') { const r = await (adminApi as any).createLotteryPrize(row); if (r.success) { setMsg('奖品已添加'); load(); return true; } }
+      else { const r = await (adminApi as any).updateLotteryPrize(id, row); if (r.success) { setMsg('奖品已更新'); load(); return true; } }
     } catch (err: any) { setMsg(err.message); }
+    return false;
   };
   const deletePrize = async (id: number) => {
     try { const r = await (adminApi as any).deleteLotteryPrize(id); if (r.success) { setMsg('奖品已删除'); load(); } }
     catch (err: any) { setMsg(err.message); }
   };
   const setCell = (id: number | 'new', key: string, val: any) => setEdits(prev => ({ ...prev, [id]: { ...prev[id], [key]: val } }));
+
+  // 档位基础概率（展示用）：SSR 取基础值；SR/R/N 按配置比例分摊剩余概率（与后端 calcRarityChances 一致）
+  const tierChance = (r: string, cfg: Record<string, string>): number => {
+    const ssr = parseInt(cfg.lottery_rate_ssr) || 0;
+    if (r === 'SSR') return ssr;
+    const rem = 100 - ssr;
+    const sr = parseInt(cfg.lottery_rate_sr) || 0;
+    const rr = parseInt(cfg.lottery_rate_r) || 0;
+    const nn = parseInt(cfg.lottery_rate_n) || 0;
+    const tot = sr + rr + nn;
+    if (tot <= 0) return 0;
+    const map: Record<string, number> = { SR: sr, R: rr, N: nn };
+    return Math.round(((rem * (map[r] || 0)) / tot) * 100) / 100;
+  };
 
   if (!data) return <TableSkeleton rows={3} cols={6} />;
   const types = ['coins','rename','vip','bump','highlight','fortune','avatar_frame','title_badge','rainbow_title','announce'];
@@ -573,49 +601,122 @@ function LotteryPanel() {
         </div>
         <button onClick={saveConfig} className="mt-4 bg-primary-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-primary-700 transition">保存配置</button>
       </div>
-      {/* 奖池 */}
+      {/* 奖池：按稀有度分组 */}
       <div className="bg-white rounded-xl border p-4 md:p-6">
-        <h3 className="font-bold mb-1">🎁 奖池管理</h3>
-        <p className="text-xs text-gray-400 mb-4">名称/概率（权重）/稀有度均可改；删除后不再产出</p>
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm min-w-[720px]">
-            <thead className="bg-gray-50">
-              <tr><th className={thCls}>名称</th><th className={thCls}>图标</th><th className={thCls}>类型</th><th className={thCls}>数值 / 效果</th><th className={thCls}>稀有度（档位）</th><th className={thCls}>权重</th><th className={`${thCls} text-right`}>操作</th></tr>
-            </thead>
-            <tbody className="divide-y">
-              {(data.prizes || []).map((p: any) => {
-                const e = edits[p.id] || p;
-                return (
-                  <tr key={p.id} className="hover:bg-gray-50">
-                    <td className={tdCls}><input className={inputCls} value={e.name} onChange={ev => setCell(p.id, 'name', ev.target.value)} /></td>
-                    <td className={tdCls}><input className={`${inputCls} w-16`} value={e.emoji} onChange={ev => setCell(p.id, 'emoji', ev.target.value)} /></td>
-                    <td className={tdCls}><select className={inputCls} value={e.type} onChange={ev => { setCell(p.id, 'type', ev.target.value); if (['bump','highlight','fortune','announce'].includes(ev.target.value)) setCell(p.id, 'value', '1'); }}>{types.map(t => <option key={t} value={t}>{PRIZE_TYPE_LABELS[t] || t}</option>)}</select></td>
-                    <td className={tdCls}>
-                      <input className={inputCls} value={e.value} onChange={ev => setCell(p.id, 'value', ev.target.value)} placeholder={VALUE_HINTS[e.type] || '数量'} />
-                      <div className="text-[10px] text-gray-400 mt-0.5">{VALUE_HINTS[e.type] || ''}</div>
-                    </td>
-                    <td className={tdCls}><select className={inputCls} value={e.rarity} onChange={ev => setCell(p.id, 'rarity', ev.target.value)}>{rarities.map(r => <option key={r} value={r}>{RARITY_LABELS[r] || r}</option>)}</select></td>
-                    <td className={tdCls}><input type="number" min="1" className={`${inputCls} w-20`} value={e.weight} onChange={ev => setCell(p.id, 'weight', parseInt(ev.target.value) || 1)} /></td>
-                    <td className={`${tdCls} text-right whitespace-nowrap`}>
-                      <button onClick={() => savePrize(p.id)} className="text-xs text-primary-600 hover:underline mr-2">保存</button>
-                      <button onClick={() => confirmModal('删除奖品', `确定删除奖品「${p.name}」？`, () => deletePrize(p.id))} className="text-xs text-red-600 hover:underline">删除</button>
-                    </td>
-                  </tr>
-                );
-              })}
-              {(() => { const e = edits.new || {}; return (
-                <tr className="bg-gray-50/50">
-                  <td className={tdCls}><input className={inputCls} placeholder="新奖品名称" value={e.name || ''} onChange={ev => setCell('new', 'name', ev.target.value)} /></td>
-                  <td className={tdCls}><input className={`${inputCls} w-16`} value={e.emoji || ''} onChange={ev => setCell('new', 'emoji', ev.target.value)} /></td>
-                  <td className={tdCls}><select className={inputCls} value={e.type || 'coins'} onChange={ev => { setCell('new', 'type', ev.target.value); if (['bump','highlight','fortune','announce'].includes(ev.target.value)) setCell('new', 'value', '1'); }}>{types.map(t => <option key={t} value={t}>{PRIZE_TYPE_LABELS[t] || t}</option>)}</select></td>
-                  <td className={tdCls}><input className={inputCls} value={e.value || ''} onChange={ev => setCell('new', 'value', ev.target.value)} /></td>
-                  <td className={tdCls}><select className={inputCls} value={e.rarity || 'N'} onChange={ev => setCell('new', 'rarity', ev.target.value)}>{rarities.map(r => <option key={r} value={r}>{RARITY_LABELS[r] || r}</option>)}</select></td>
-                  <td className={tdCls}><input type="number" min="1" className={`${inputCls} w-20`} value={e.weight || 1} onChange={ev => setCell('new', 'weight', parseInt(ev.target.value) || 1)} /></td>
-                  <td className={`${tdCls} text-right`}><button onClick={() => savePrize('new')} className="text-xs bg-primary-600 text-white px-3 py-1.5 rounded-lg hover:bg-primary-700 transition">添加</button></td>
-                </tr>
-              ); })()}
-            </tbody>
-          </table>
+        <div className="flex flex-wrap items-baseline justify-between gap-2 mb-4">
+          <div>
+            <h3 className="font-bold">🎁 奖池管理</h3>
+            <p className="text-xs text-gray-400 mt-1">按稀有度分组编辑；「实际概率」= 档位概率 × 档内权重占比，改完逐行保存（未保存的行会高亮）</p>
+          </div>
+        </div>
+        <div className="space-y-4">
+          {(['SSR', 'SR', 'R', 'N'] as const).map(r => {
+            const style = RARITY_STYLE[r];
+            const prizes = (data.prizes || []).filter((p: any) => p.rarity === r);
+            const sum = prizes.reduce((acc: number, p: any) => acc + (p.weight || 1), 0);
+            const chance = tierChance(r, config);
+            const ssrBoost = parseInt(config.lottery_rate_ssr_boost) || 0;
+            const fixedTypes = ['bump', 'highlight', 'fortune', 'announce'];
+            return (
+              <div key={r}>
+                {/* 档位头 */}
+                <div className={`flex flex-wrap items-center gap-2 rounded-t-xl border bg-gradient-to-r ${style.header} px-4 py-2.5`}>
+                  <span className={`${style.badge} text-xs font-bold px-2 py-0.5 rounded-md`}>{r}</span>
+                  <span className="text-xs text-gray-500">单抽概率 ≈ {chance}%{r === 'SSR' && ssrBoost > 0 && chance < 100 ? <span className="text-gray-400">（软保底后 {ssrBoost}%）</span> : null}</span>
+                  <span className="text-xs text-gray-400">{prizes.length} 个奖品 · 档内权重 {sum}</span>
+                  <button
+                    onClick={() => { setAddingRarity(addingRarity === r ? null : r); setCell('new', 'rarity', r); if (!edits.new) { setCell('new', 'type', 'coins'); setCell('new', 'weight', 1); } }}
+                    className="ml-auto text-xs font-medium text-gray-600 bg-white/80 hover:bg-white border border-gray-200 rounded-lg px-2.5 py-1 transition">
+                    ＋ 添加奖品
+                  </button>
+                </div>
+                {/* 奖品行 */}
+                <div className="border-x border-b rounded-b-xl divide-y">
+                  {prizes.length === 0 && addingRarity !== r && (
+                    <div className="px-4 py-3 text-xs text-gray-400">该档位暂无奖品，点右上角「＋ 添加奖品」</div>
+                  )}
+                  {prizes.map((p: any) => {
+                    const e = edits[p.id] || p;
+                    const isDirty = ['name', 'emoji', 'type', 'value', 'rarity', 'weight'].some(k => String(e[k] ?? '') !== String(p[k] ?? ''));
+                    const pChance = sum > 0 ? (chance * ((p.weight || 1) / sum)) : 0;
+                    return (
+                      <div key={p.id} className={`px-4 py-3 flex flex-wrap items-start gap-2 ${isDirty ? 'bg-amber-50/50' : 'hover:bg-gray-50/60'}`}>
+                        <input className="w-12 h-10 text-center text-lg border rounded-lg outline-none focus:border-primary-400" value={e.emoji ?? ''} onChange={ev => setCell(p.id, 'emoji', ev.target.value)} title="图标 emoji" />
+                        <div className="w-36">
+                          <input className={inputCls} value={e.name} onChange={ev => setCell(p.id, 'name', ev.target.value)} />
+                          <div className="text-[10px] text-gray-400 mt-0.5">名称</div>
+                        </div>
+                        <div className="w-32">
+                          <select className={inputCls} value={e.type} onChange={ev => { setCell(p.id, 'type', ev.target.value); if (fixedTypes.includes(ev.target.value)) setCell(p.id, 'value', '1'); }}>
+                            {types.map(t => <option key={t} value={t}>{PRIZE_TYPE_LABELS[t] || t}</option>)}
+                          </select>
+                          <div className="text-[10px] text-gray-400 mt-0.5">类型</div>
+                        </div>
+                        <div className="w-32">
+                          <input className={inputCls} value={e.value ?? ''} onChange={ev => setCell(p.id, 'value', ev.target.value)} placeholder={VALUE_HINTS[e.type] || '数量'} />
+                          <div className="text-[10px] text-gray-400 mt-0.5 truncate" title={VALUE_HINTS[e.type] || ''}>{VALUE_HINTS[e.type] || '数值'}</div>
+                        </div>
+                        <div className="w-24">
+                          <input type="number" min="1" className={inputCls} value={e.weight} onChange={ev => setCell(p.id, 'weight', parseInt(ev.target.value) || 1)} />
+                          <div className="text-[10px] text-gray-400 mt-0.5">权重</div>
+                        </div>
+                        <div className="w-16 pt-2">
+                          <div className="text-sm font-medium tabular-nums text-gray-700">{pChance >= 0.01 ? `≈ ${pChance.toFixed(2)}%` : '< 0.01%'}</div>
+                          <div className="text-[10px] text-gray-400">实际概率</div>
+                        </div>
+                        <div className="flex items-center gap-2 pt-1 ml-auto">
+                          {isDirty && <span className="text-[10px] text-amber-600 font-medium">未保存</span>}
+                          <button onClick={() => savePrize(p.id)}
+                            className={`text-xs rounded-lg px-3 py-1.5 transition ${isDirty ? 'bg-primary-600 text-white hover:bg-primary-700 font-medium' : 'text-primary-600 border border-primary-200 hover:bg-primary-50'}`}>
+                            保存
+                          </button>
+                          <button onClick={() => confirmModal('删除奖品', `确定删除奖品「${p.name}」？`, () => deletePrize(p.id))}
+                            className="text-xs text-red-500 border border-red-200 rounded-lg px-3 py-1.5 hover:bg-red-50 transition">
+                            删除
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  })}
+                  {/* 该档位的新奖品表单 */}
+                  {addingRarity === r && (() => {
+                    const e = edits.new || {};
+                    return (
+                      <div className="px-4 py-3 flex flex-wrap items-start gap-2 bg-primary-50/40">
+                        <input className="w-12 h-10 text-center text-lg border rounded-lg outline-none focus:border-primary-400" placeholder="🎉" value={e.emoji || ''} onChange={ev => setCell('new', 'emoji', ev.target.value)} title="图标 emoji" />
+                        <div className="w-36">
+                          <input className={inputCls} placeholder="新奖品名称" value={e.name || ''} onChange={ev => setCell('new', 'name', ev.target.value)} />
+                          <div className="text-[10px] text-gray-400 mt-0.5">名称</div>
+                        </div>
+                        <div className="w-32">
+                          <select className={inputCls} value={e.type || 'coins'} onChange={ev => { setCell('new', 'type', ev.target.value); if (fixedTypes.includes(ev.target.value)) setCell('new', 'value', '1'); }}>
+                            {types.map(t => <option key={t} value={t}>{PRIZE_TYPE_LABELS[t] || t}</option>)}
+                          </select>
+                          <div className="text-[10px] text-gray-400 mt-0.5">类型</div>
+                        </div>
+                        <div className="w-32">
+                          <input className={inputCls} value={e.value || ''} onChange={ev => setCell('new', 'value', ev.target.value)} placeholder={VALUE_HINTS[e.type] || '数量'} />
+                          <div className="text-[10px] text-gray-400 mt-0.5 truncate" title={VALUE_HINTS[e.type] || ''}>{VALUE_HINTS[e.type] || '数值'}</div>
+                        </div>
+                        <div className="w-24">
+                          <input type="number" min="1" className={inputCls} value={e.weight || 1} onChange={ev => setCell('new', 'weight', parseInt(ev.target.value) || 1)} />
+                          <div className="text-[10px] text-gray-400 mt-0.5">权重</div>
+                        </div>
+                        <div className="w-16 pt-2">
+                          <div className="text-sm font-medium tabular-nums text-gray-400">—</div>
+                          <div className="text-[10px] text-gray-400">实际概率</div>
+                        </div>
+                        <div className="flex items-center gap-2 pt-1 ml-auto">
+                          <button onClick={async () => { if (await savePrize('new')) setAddingRarity(null); }} className="text-xs bg-primary-600 text-white rounded-lg px-3 py-1.5 font-medium hover:bg-primary-700 transition">添加</button>
+                          <button onClick={() => setAddingRarity(null)} className="text-xs text-gray-500 border border-gray-200 rounded-lg px-3 py-1.5 hover:bg-gray-50 transition">取消</button>
+                        </div>
+                      </div>
+                    );
+                  })()}
+                </div>
+              </div>
+            );
+          })}
         </div>
       </div>
       {/* 保底排名 */}
