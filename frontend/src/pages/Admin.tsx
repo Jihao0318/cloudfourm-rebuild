@@ -262,7 +262,7 @@ function LotteryPanel() {
     // 与后端 lottery-coins.ts DEFAULT_CFG 保持一致（加载时后端真实值会覆盖这些默认值）
     lottery_draw_cost: '40', lottery_draw10_cost: '360',
     lottery_rate_ssr: '5', lottery_rate_ssr_boost: '25', lottery_rate_sr: '15', lottery_rate_r: '30', lottery_rate_n: '50',
-    lottery_pity_soft: '50', lottery_pity_hard: '80',
+    lottery_pity_soft: '50', lottery_pity_hard: '80', lottery_daily_draw_limit: '50',
   };
   const [config, setConfig] = useState<Record<string, string>>({ ...CFG_DEFAULTS });
   const [edits, setEdits] = useState<Record<string, any>>({});
@@ -320,7 +320,7 @@ function LotteryPanel() {
         <h3 className="font-bold mb-1">⚙️ 抽奖数值配置</h3>
         <p className="text-xs text-gray-400 mb-4">价格、概率、保底抽数均可修改，保存后立即生效</p>
         <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
-          {[['lottery_draw_cost','单抽价格（积分）'],['lottery_draw10_cost','十连价格（积分）'],['lottery_rate_ssr','SSR 基础概率 %'],['lottery_rate_ssr_boost','SSR 软保底概率 %'],['lottery_rate_sr','SR 概率 %'],['lottery_rate_r','R 概率 %'],['lottery_rate_n','N 概率 %（参考）'],['lottery_pity_soft','软保底抽数'],['lottery_pity_hard','硬保底抽数']].map(([k, label]) => (
+          {[['lottery_draw_cost','单抽价格（积分）'],['lottery_draw10_cost','十连价格（积分）'],['lottery_rate_ssr','SSR 基础概率 %'],['lottery_rate_ssr_boost','SSR 软保底概率 %'],['lottery_rate_sr','SR 概率 %'],['lottery_rate_r','R 概率 %'],['lottery_rate_n','N 概率 %（参考）'],['lottery_pity_soft','软保底抽数'],['lottery_pity_hard','硬保底抽数'],['lottery_daily_draw_limit','每人每日抽数上限']].map(([k, label]) => (
             <div key={k}><label className="block text-xs text-gray-500 mb-1">{label}</label>
               <input type="number" min="0" className={inputCls} value={config[k]} onChange={e => setConfig({ ...config, [k]: e.target.value })} /></div>
           ))}

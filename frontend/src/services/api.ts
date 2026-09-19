@@ -753,6 +753,10 @@ export interface LotteryStatus {
     to_soft_pity: number;
     to_hard_pity: number;
   };
+  // 每日抽数上限（方案一）：draws_today = 今日已抽次数，draws_remaining = 还能抽几次
+  draws_today?: number;
+  draw_limit?: number;
+  draws_remaining?: number;
 }
 
 export interface LotteryDrawResult {

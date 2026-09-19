@@ -2,7 +2,7 @@ import { Hono } from 'hono';
 import type { Env, JWTPayload } from '../types';
 import { requireAuth } from '../middleware/auth';
 import { rateLimit } from '../middleware/rateLimit';
-import { unlockAchievement } from '../utils/game';
+import { unlockAchievement, todayUtc8 } from '../utils/game';
 
 const lotteryCoins = new Hono<{ Bindings: Env }>();
 
@@ -11,12 +11,14 @@ const DEFAULT_CFG = {
   drawCost: 40, draw10Cost: 360,
   ssrBase: 5, ssrBoost: 25, srRate: 15, rRate: 30, nRate: 50,
   softPity: 50, hardPity: 80,
+  dailyDrawLimit: 50,
 };
 
 // 读取抽奖配置（settings 键，缺失时用默认值）
 async function getLotteryConfig(db: D1Database): Promise<typeof DEFAULT_CFG> {
   const keys = ['lottery_draw_cost', 'lottery_draw10_cost', 'lottery_rate_ssr', 'lottery_rate_ssr_boost',
-    'lottery_rate_sr', 'lottery_rate_r', 'lottery_rate_n', 'lottery_pity_soft', 'lottery_pity_hard'];
+    'lottery_rate_sr', 'lottery_rate_r', 'lottery_rate_n', 'lottery_pity_soft', 'lottery_pity_hard',
+    'lottery_daily_draw_limit'];
   const rows = await db.prepare(`SELECT key, value FROM settings WHERE key IN (${keys.map(() => '?').join(',')})`).bind(...keys).all<{ key: string; value: string }>();
   const m: Record<string, string> = {};
   for (const r of rows.results || []) m[r.key] = r.value;
@@ -31,6 +33,7 @@ async function getLotteryConfig(db: D1Database): Promise<typeof DEFAULT_CFG> {
     nRate: num('lottery_rate_n', DEFAULT_CFG.nRate),
     softPity: num('lottery_pity_soft', DEFAULT_CFG.softPity),
     hardPity: num('lottery_pity_hard', DEFAULT_CFG.hardPity),
+    dailyDrawLimit: num('lottery_daily_draw_limit', DEFAULT_CFG.dailyDrawLimit),
   };
 }
 
@@ -101,13 +104,17 @@ lotteryCoins.get('/status', requireAuth, async (c) => {
   const [balanceRow, prizes, pityRow, cfg] = await Promise.all([
     c.env.DB.prepare('SELECT coins FROM user_balances WHERE user_id = ?').bind(user.userId).first<{ coins: number }>(),
     c.env.DB.prepare('SELECT * FROM lottery_coin_prizes ORDER BY id ASC').all<any>(),
-    c.env.DB.prepare('SELECT pulls_since_ssr, total_pulls FROM lottery_pity WHERE user_id = ?').bind(user.userId).first<{ pulls_since_ssr: number; total_pulls: number }>(),
+    c.env.DB.prepare('SELECT pulls_since_ssr, total_pulls, draws_date, draws_today FROM lottery_pity WHERE user_id = ?').bind(user.userId).first<{ pulls_since_ssr: number; total_pulls: number; draws_date: string | null; draws_today: number }>(),
     getLotteryConfig(c.env.DB),
   ]);
 
   const pullsSinceSSR = pityRow?.pulls_since_ssr || 0;
   const totalPulls = pityRow?.total_pulls || 0;
   const chances = calcRarityChances(pullsSinceSSR, cfg);
+
+  // 每日抽数：按 UTC+8 业务日重置（与签到同口径）
+  const today = todayUtc8();
+  const drawsToday = pityRow && pityRow.draws_date === today ? (pityRow.draws_today || 0) : 0;
 
   return c.json({
     success: true,
@@ -134,6 +141,10 @@ lotteryCoins.get('/status', requireAuth, async (c) => {
         to_soft_pity: Math.max(0, cfg.softPity - pullsSinceSSR),
         to_hard_pity: Math.max(0, cfg.hardPity - pullsSinceSSR),
       },
+      // 每日抽数上限（方案一）：前端显示「今日剩余 X 抽」并在用完时禁用按钮
+      draws_today: drawsToday,
+      draw_limit: cfg.dailyDrawLimit,
+      draws_remaining: Math.max(0, cfg.dailyDrawLimit - drawsToday),
     },
   });
 });
@@ -180,10 +191,19 @@ async function handleDraw(c: any, user: JWTPayload, count: number, isTenPull: bo
     return c.json({ success: false, error: '奖池为空，请联系管理员' }, 500);
   }
 
-  // 读取保底
+  // 每日抽数上限（方案一，后台可调 lottery_daily_draw_limit）：单抽与十连都计入，
+  // 按 UTC+8 业务日重置。目的：把「挂机刷分」的日收益封顶，普通玩家几乎碰不到顶。
+  const today = todayUtc8();
   const pityRow = await c.env.DB
-    .prepare('SELECT pulls_since_ssr, total_pulls FROM lottery_pity WHERE user_id = ?')
-    .bind(user.userId).first<{ pulls_since_ssr: number; total_pulls: number }>();
+    .prepare('SELECT pulls_since_ssr, total_pulls, draws_date, draws_today FROM lottery_pity WHERE user_id = ?')
+    .bind(user.userId).first<{ pulls_since_ssr: number; total_pulls: number; draws_date: string | null; draws_today: number }>();
+  const drawsUsed = pityRow && pityRow.draws_date === today ? (pityRow.draws_today || 0) : 0;
+  if (drawsUsed + count > cfg.dailyDrawLimit) {
+    const remain = Math.max(0, cfg.dailyDrawLimit - drawsUsed);
+    return c.json({ success: false, error: remain <= 0
+      ? `今日抽数已用完（${cfg.dailyDrawLimit}），明天再来`
+      : `今日剩余抽数不足：还剩 ${remain} 次，本次需要 ${count} 次` }, 400);
+  }
   let pullsSinceSSR = pityRow?.pulls_since_ssr || 0;
 
   // 执行抽奖
@@ -393,20 +413,21 @@ async function handleDraw(c: any, user: JWTPayload, count: number, isTenPull: bo
     );
   }
 
-  // 6. 更新保底（使用 SQL 级增量避免并发覆盖）
-  if (hasSSR) {
-    stmts.push(
-      c.env.DB.prepare(`INSERT INTO lottery_pity (user_id, pulls_since_ssr, total_pulls)
-        VALUES (?, 0, ?) ON CONFLICT(user_id) DO UPDATE SET pulls_since_ssr = 0, total_pulls = total_pulls + ?`)
-        .bind(user.userId, count, count),
-    );
-  } else {
-    stmts.push(
-      c.env.DB.prepare(`INSERT INTO lottery_pity (user_id, pulls_since_ssr, total_pulls)
-        VALUES (?, ?, ?) ON CONFLICT(user_id) DO UPDATE SET pulls_since_ssr = pulls_since_ssr + ?, total_pulls = total_pulls + ?`)
-        .bind(user.userId, count, count, count, count),
-    );
-  }
+  // 6. 更新保底 + 当日抽数（使用 SQL 级增量避免并发覆盖；抽数按 UTC+8 业务日重置）
+  const pityUpsert = hasSSR
+    ? c.env.DB.prepare(`INSERT INTO lottery_pity (user_id, pulls_since_ssr, total_pulls, draws_date, draws_today)
+        VALUES (?, 0, ?, ?, ?) ON CONFLICT(user_id) DO UPDATE SET
+          pulls_since_ssr = 0, total_pulls = total_pulls + ?,
+          draws_today = CASE WHEN lottery_pity.draws_date = excluded.draws_date THEN lottery_pity.draws_today + excluded.draws_today ELSE excluded.draws_today END,
+          draws_date = excluded.draws_date`)
+    : c.env.DB.prepare(`INSERT INTO lottery_pity (user_id, pulls_since_ssr, total_pulls, draws_date, draws_today)
+        VALUES (?, ?, ?, ?, ?) ON CONFLICT(user_id) DO UPDATE SET
+          pulls_since_ssr = pulls_since_ssr + ?, total_pulls = total_pulls + ?,
+          draws_today = CASE WHEN lottery_pity.draws_date = excluded.draws_date THEN lottery_pity.draws_today + excluded.draws_today ELSE excluded.draws_today END,
+          draws_date = excluded.draws_date`);
+  stmts.push(hasSSR
+    ? pityUpsert.bind(user.userId, 0, count, today, count, count)
+    : pityUpsert.bind(user.userId, pullsSinceSSR, count, today, count, count, count));
 
   // 7. 全服公告
   if (shouldAnnounce) {

@@ -1221,7 +1221,8 @@ admin.get('/lottery', async (c) => {
     `).all();
     // 抽奖配置（后台可改的全部数值）
     const cfgKeys = ['lottery_draw_cost', 'lottery_draw10_cost', 'lottery_rate_ssr', 'lottery_rate_ssr_boost',
-      'lottery_rate_sr', 'lottery_rate_r', 'lottery_rate_n', 'lottery_pity_soft', 'lottery_pity_hard'];
+      'lottery_rate_sr', 'lottery_rate_r', 'lottery_rate_n', 'lottery_pity_soft', 'lottery_pity_hard',
+      'lottery_daily_draw_limit'];
     const cfgRows = await c.env.DB.prepare(`SELECT key, value FROM settings WHERE key IN (${cfgKeys.map(() => '?').join(',')})`).bind(...cfgKeys).all<{ key: string; value: string }>();
     const config: Record<string, string> = {};
     for (const r of cfgRows.results || []) config[r.key] = r.value;
@@ -1237,6 +1238,7 @@ admin.put('/lottery', async (c) => {
       lottery_draw_cost: 1, lottery_draw10_cost: 1,
       lottery_rate_ssr: 0, lottery_rate_ssr_boost: 0, lottery_rate_sr: 0, lottery_rate_r: 0, lottery_rate_n: 0,
       lottery_pity_soft: 1, lottery_pity_hard: 1,
+      lottery_daily_draw_limit: 1,
     };
     const updates: { key: string; value: string }[] = [];
     for (const [key, min] of Object.entries(allowed)) {

@@ -187,8 +187,8 @@ export default function LotteryCoins() {
     setLightFrozen(false);
   };
 
-  const canDraw = !!status && status.balance >= status.draw_cost;
-  const canDraw10 = !!status && status.balance >= status.draw10_cost;
+  const canDraw = !!status && status.balance >= status.draw_cost && status.draws_remaining !== 0;
+  const canDraw10 = !!status && status.balance >= status.draw10_cost && (status.draws_remaining ?? 99) >= 10;
   const pity = status?.pity;
 
   if (statusError && !status) {
@@ -364,6 +364,9 @@ export default function LotteryCoins() {
 
             <p className="text-[11px] text-gray-400">
               {mode === 'single' ? '单抽可触发保底进度' : '十连必出 SR 及以上'}
+              {status && status.draws_remaining !== undefined && (
+                <> · 今日已抽 {status.draws_today}/{status.draw_limit}（剩 {status.draws_remaining} 次）</>
+              )}
             </p>
           </div>
         </div>
