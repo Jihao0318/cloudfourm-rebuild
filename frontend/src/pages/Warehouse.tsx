@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { useNavigate } from 'react-router-dom';
+import BackButton from '../components/BackButton';
 import { useAuth } from '../contexts/AuthContext';
 import { useToast } from '../contexts/ToastContext';
 import { shop as shopApi, items as itemsApi, decorations as decorationsApi, posts as postsApi } from '../services/api';
@@ -270,7 +271,14 @@ export default function Warehouse() {
 
   return (
     <div className="max-w-3xl mx-auto py-6">
-      <h1 className="text-2xl font-bold mb-1">我的仓库</h1>
+      <BackButton />
+      <div className="flex items-center justify-between gap-3 mb-1">
+        <h1 className="text-2xl font-bold">我的仓库</h1>
+        <button onClick={() => navigate('/shop')}
+          className="shrink-0 flex items-center gap-1.5 bg-primary-600 text-white text-sm font-medium px-3.5 py-2 rounded-xl hover:bg-primary-700 active:scale-95 transition">
+          🛒 去商城
+        </button>
+      </div>
       <p className="text-gray-500 text-sm mb-4">管理你拥有的道具和物品</p>
 
       {itemTypes.length > 0 && (

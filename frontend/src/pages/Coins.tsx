@@ -182,17 +182,6 @@ export default function Coins() {
         <span className="text-gray-300 group-hover:text-primary-500 transition text-lg">→</span>
       </Link>
 
-      {/* 我的红包入口 — 独立页面实时管理进行中的红包 */}
-      <Link to="/red-packets" className="bg-white rounded-2xl border p-5 flex items-center gap-4 hover:border-red-300 hover:shadow-sm transition group">
-        <div className="w-11 h-11 rounded-xl bg-red-50 text-red-500 flex items-center justify-center text-lg shrink-0">
-          <span>🧧</span>
-        </div>
-        <div className="flex-1 min-w-0">
-          <p className="font-semibold text-gray-900 group-hover:text-red-500 transition">我的红包</p>
-          <p className="text-xs text-gray-400 mt-0.5">实时查看剩余金额，可随时取消退款</p>
-        </div>
-        <span className="text-gray-300 group-hover:text-red-400 transition text-lg">→</span>
-      </Link>
 
       {/* 今日收入概况（已取消每日上限，改为直接展示今日累计与获取方式） */}
       <div className="bg-white rounded-2xl border p-4 sm:p-6">
