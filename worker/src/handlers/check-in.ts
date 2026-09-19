@@ -67,7 +67,7 @@ checkIn.post('/', requireAuth, async (c) => {
   const streak = prevCheckIn ? prevCheckIn.streak + 1 : 1;
 
   // 根据连续天数计算积分（7 天一轮回的阶梯奖励）
-  const CHECKIN_REWARDS = [1, 2, 3, 5, 8, 13, 20];
+  const CHECKIN_REWARDS = [5, 10, 15, 20, 30, 40, 60];
   let coinsEarned = CHECKIN_REWARDS[(streak - 1) % CHECKIN_REWARDS.length];
 
   // VIP 签到加成

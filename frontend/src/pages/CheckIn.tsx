@@ -16,7 +16,7 @@ function getLocalDate(): string {
 
 // 连续签到积分阶梯（7 天一轮，第 8 天回到第 1 天）
 // 必须与后端 worker/src/handlers/check-in.ts 的 CHECKIN_REWARDS 保持一致
-const CHECKIN_LADDER = [1, 2, 3, 5, 8, 13, 20];
+const CHECKIN_LADDER = [5, 10, 15, 20, 30, 40, 60];
 
 export default function CheckIn() {
   const { user, loading: authLoading } = useAuth();
