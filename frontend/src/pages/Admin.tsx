@@ -1035,6 +1035,8 @@ const MENU: { section: string; items: { id: AdminMenuId; label: string; icon: st
       { id: 'comments', label: '评论管理', icon: '💬' },
       { id: 'pinned', label: '置顶管理', icon: '📌' },
       { id: 'reports', label: '举报审核', icon: '🚩' },
+      { id: 'exchange', label: '限时兑换', icon: '⏳' },
+      { id: 'shop', label: '商城物价', icon: '🏪' },
       { id: 'boards', label: '板块管理', icon: '🗂️' },
     ],
   },
@@ -1840,6 +1842,7 @@ function SettingsPanel() {
     'registration_open', 'require_email_verify',
     'lottery_draw_cost', 'lottery_draw10_cost', 'lottery_rate_ssr', 'lottery_rate_sr',
     'lottery_rate_r', 'lottery_rate_n', 'lottery_rate_ssr_boost', 'lottery_pity_soft', 'lottery_pity_hard',
+    'lottery_daily_draw_limit',
   ]);
 
   const isOn = (v: string) => v === 'true' || v === '1';
